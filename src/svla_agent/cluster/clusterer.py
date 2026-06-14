@@ -40,6 +40,7 @@ def _assign_labels(embeddings: np.ndarray, failures: list[Failure]) -> np.ndarra
         min_cluster_size=min_size,
         min_samples=settings.cluster_min_samples,
         metric="euclidean",
+        copy=True,
     )
     labels = clusterer.fit_predict(embeddings).astype(int)
 
