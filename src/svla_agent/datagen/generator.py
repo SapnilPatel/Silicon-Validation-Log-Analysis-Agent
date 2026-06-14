@@ -525,23 +525,34 @@ def gen_run(run_id: int, out_logs: str, out_labels: str, seed: int, anomaly_rate
     with open(os.path.join(out_labels, f"run_{run_id:06d}.label.json"), "w") as f:
         json.dump(label, f, indent=2)
 
-def main():
-    out_logs = "data/silicon_logs"
-    out_labels = "data/labels"
-    runs = 100  # bump to 500-1500 later
-    base_seed = 424200
+def generate(
+    runs: int = 100,
+    out_logs: str = "data/silicon_logs",
+    out_labels: str = "data/labels",
+    base_seed: int = 424200,
+    anomaly_rate: float = 0.35,
+    noise_lines: Tuple[int, int] = (8000, 22000),
+) -> Tuple[str, str, int]:
+    """Generate ``runs`` synthetic multi-source validation runs.
 
+    Returns ``(out_logs, out_labels, runs)`` so callers can report paths.
+    """
     for i in range(runs):
         gen_run(
             run_id=i,
             out_logs=out_logs,
             out_labels=out_labels,
             seed=base_seed + i,
-            anomaly_rate=0.35,
-            noise_lines=(8000, 22000)  # "more data"
+            anomaly_rate=anomaly_rate,
+            noise_lines=noise_lines,
         )
+    return out_logs, out_labels, runs
 
+
+def main():
+    out_logs, out_labels, runs = generate()
     print(f"Generated {runs} multi-source runs in {out_logs} and labels in {out_labels}")
+
 
 if __name__ == "__main__":
     main()
