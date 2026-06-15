@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -53,10 +52,10 @@ def generate(
 
 @app.command()
 def process(
-    run: Optional[str] = typer.Option(None, help="Process a single run id (e.g. 000007)."),
-    logs: Optional[Path] = typer.Option(None, help="Logs directory (default from settings)."),
-    labels: Optional[Path] = typer.Option(None, help="Labels directory (default from settings)."),
-    limit: Optional[int] = typer.Option(None, help="Process only the first N runs."),
+    run: str | None = typer.Option(None, help="Process a single run id (e.g. 000007)."),
+    logs: Path | None = typer.Option(None, help="Logs directory (default from settings)."),
+    labels: Path | None = typer.Option(None, help="Labels directory (default from settings)."),
+    limit: int | None = typer.Option(None, help="Process only the first N runs."),
     no_index: bool = typer.Option(False, "--no-index", help="Do not (re)index the RAG store."),
     no_write: bool = typer.Option(False, "--no-write", help="Do not write report files."),
 ) -> None:
@@ -91,8 +90,8 @@ def process(
 
 @app.command()
 def index(
-    logs: Optional[Path] = typer.Option(None, help="Logs directory."),
-    labels: Optional[Path] = typer.Option(None, help="Labels directory."),
+    logs: Path | None = typer.Option(None, help="Logs directory."),
+    labels: Path | None = typer.Option(None, help="Labels directory."),
 ) -> None:
     """(Re)build the RAG vector store of historical failures."""
     _init()
@@ -109,10 +108,10 @@ def index(
 
 @app.command(name="eval")
 def evaluate_cmd(
-    logs: Optional[Path] = typer.Option(None, help="Logs directory."),
-    labels: Optional[Path] = typer.Option(None, help="Labels directory."),
-    limit: Optional[int] = typer.Option(None, help="Evaluate only the first N runs."),
-    out: Optional[Path] = typer.Option(None, help="Write metrics JSON to this path."),
+    logs: Path | None = typer.Option(None, help="Logs directory."),
+    labels: Path | None = typer.Option(None, help="Labels directory."),
+    limit: int | None = typer.Option(None, help="Evaluate only the first N runs."),
+    out: Path | None = typer.Option(None, help="Write metrics JSON to this path."),
 ) -> None:
     """Evaluate pipeline output against ground-truth labels."""
     _init()
@@ -158,7 +157,9 @@ def _print_run_summary(report) -> None:
     for f in report.failures:
         console.print(f"  • {f.failure_type} [{f.severity.value}] in {f.subsys}")
     for h in report.hypotheses:
-        console.print(f"    ↳ {h.root_cause}  ([italic]{int(h.confidence*100)}%, {h.source}[/italic])")
+        console.print(
+            f"    ↳ {h.root_cause}  ([italic]{int(h.confidence * 100)}%, {h.source}[/italic])"
+        )
 
 
 def _print_corpus_summary(result) -> None:

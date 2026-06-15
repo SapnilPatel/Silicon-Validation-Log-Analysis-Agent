@@ -125,6 +125,7 @@ class VectorStore:
         """Drop and recreate the collection."""
         name = self.settings.rag_collection
         _ = self.collection  # ensure client exists
+        assert self._client is not None
         self._client.delete_collection(name)
         self._collection = self._client.get_or_create_collection(
             name=name, metadata={"hnsw:space": "cosine"}

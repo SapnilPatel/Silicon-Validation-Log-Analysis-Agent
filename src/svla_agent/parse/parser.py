@@ -91,7 +91,7 @@ def parse_header(lines: list[str]) -> RunMeta:
             extra[key] = value
     fields.setdefault("run_id", "unknown")
     fields["extra"] = extra
-    return RunMeta(**fields)
+    return RunMeta.model_validate(fields)
 
 
 def parse_run(run: RunFiles) -> ParsedRun:
@@ -122,7 +122,9 @@ def parse_run(run: RunFiles) -> ParsedRun:
         template = miner.add_log_message(message)["template_mined"]
         events.append(
             Event(
-                ts_ms=_ts_to_ms(match.group("h"), match.group("m"), match.group("s"), match.group("ms")),
+                ts_ms=_ts_to_ms(
+                    match.group("h"), match.group("m"), match.group("s"), match.group("ms")
+                ),
                 source=source,
                 subsys=match.group("subsys"),
                 level=LogLevel(match.group("level")),

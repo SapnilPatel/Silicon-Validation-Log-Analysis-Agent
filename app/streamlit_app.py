@@ -87,7 +87,9 @@ def render_run(report: dict) -> None:
     hyp_by_fid = {h["failure_id"]: h for h in report["hypotheses"]}
     for f in report["failures"]:
         icon = SEVERITY_COLOR.get(f["severity"], "⬜")
-        with st.expander(f"{icon} {f['failure_type']} — {f['severity'].upper()} ({f['subsys']})", expanded=True):
+        with st.expander(
+            f"{icon} {f['failure_type']} — {f['severity'].upper()} ({f['subsys']})", expanded=True
+        ):
             st.write(f["summary"])
             st.code("\n".join(f["evidence"]), language="text")
 
@@ -130,15 +132,12 @@ def main() -> None:
         if st.button("Reload reports"):
             load_reports.clear()
         st.caption(
-            "Generate data and reports first:\n\n"
-            "```\nsvla generate --runs 100\nsvla process\n```"
+            "Generate data and reports first:\n\n```\nsvla generate --runs 100\nsvla process\n```"
         )
 
     reports = load_reports(reports_dir)
     if not reports:
-        st.warning(
-            f"No reports found in `{reports_dir}`. Run `svla process` to generate them."
-        )
+        st.warning(f"No reports found in `{reports_dir}`. Run `svla process` to generate them.")
         return
 
     tab_overview, tab_run = st.tabs(["📊 Overview", "🔎 Run detail"])

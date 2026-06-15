@@ -73,9 +73,7 @@ class AnalysisPipeline:
         hypotheses = []
         if hypothesise:
             for failure in failures:
-                similar = self.store.query(
-                    failure.signature, exclude_failure_id=failure.failure_id
-                )
+                similar = self.store.query(failure.signature, exclude_failure_id=failure.failure_id)
                 hypotheses.append(self.agent.generate(failure, similar, failure.cluster_id))
 
         present = {

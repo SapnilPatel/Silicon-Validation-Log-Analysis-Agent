@@ -46,7 +46,7 @@ def detection_metrics(result: PipelineResult, labels: dict[str, dict]) -> dict:
             fn += 1
         else:
             tn += 1
-    metrics = _prf(tp, fp, fn)
+    metrics: dict[str, object] = dict(_prf(tp, fp, fn))
     metrics["accuracy"] = round((tp + tn) / max(1, tp + tn + fp + fn), 4)
     metrics["support"] = {"tp": tp, "fp": fp, "fn": fn, "tn": tn}
     return metrics
@@ -66,9 +66,7 @@ def failure_type_metrics(result: PipelineResult, labels: dict[str, dict]) -> dic
         for t in truth - pred:
             fn[t] += 1
 
-    per_type = {
-        t: _prf(tp[t], fp[t], fn[t]) for t in sorted(set(tp) | set(fp) | set(fn))
-    }
+    per_type = {t: _prf(tp[t], fp[t], fn[t]) for t in sorted(set(tp) | set(fp) | set(fn))}
     total = _prf(sum(tp.values()), sum(fp.values()), sum(fn.values()))
     return {"micro": total, "per_type": per_type}
 
@@ -88,9 +86,7 @@ def cluster_quality(result: PipelineResult, embedder: Embedder | None = None) ->
     if 2 <= n_clusters <= len(failures) - 1:
         out["silhouette"] = round(float(silhouette_score(embeddings, cluster_ids)), 4)
         out["davies_bouldin"] = round(float(davies_bouldin_score(embeddings, cluster_ids)), 4)
-    out["homogeneity_vs_failure_type"] = round(
-        float(homogeneity_score(true_types, cluster_ids)), 4
-    )
+    out["homogeneity_vs_failure_type"] = round(float(homogeneity_score(true_types, cluster_ids)), 4)
     return out
 
 
