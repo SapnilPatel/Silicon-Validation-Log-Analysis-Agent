@@ -1,93 +1,172 @@
 # SVLA-Agent
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)](#) [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](#) [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#)
 
-A production-oriented Agentic AI Debug Assistant for post-silicon validation logs. SVLA-Agent parses massive silicon test logs, detects anomalies, clusters failure patterns, suggests root-cause hypotheses, links to historical failures (RAG), and generates clear debug reports and dashboards.
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-blue)](.github/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](#)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+[![Code style: ruff](https://img.shields.io/badge/lint-ruff-orange)](https://github.com/astral-sh/ruff)
 
-Why SVLA-Agent?
-- Saves engineer time by surfacing actionable failure insights.
-- Scales to millions of lines using streaming parsers and vector RAG.
-- Combines classical parsing, ML clustering, and LLM-backed reasoning for explainable hypotheses.
+**Silicon Validation Log Analysis Agent** — an agentic AI debug assistant for
+post-silicon validation logs. SVLA-Agent ingests large multi-source silicon test
+logs, parses them into structured events, classifies failures, clusters recurring
+failure families, retrieves similar historical incidents (RAG), and uses Claude to
+generate explainable root-cause hypotheses with remediation steps — then writes
+clean Markdown/JSON debug reports and an interactive dashboard.
 
-Key Features
-- Robust log parsing (regex, Drain3 for structured event extraction)
-- Failure classification and deduplication
-- Pattern clustering (HDBSCAN + scikit-learn)
-- Root-cause hypothesis generation using LLMs (OpenAI / Llama)
-- RAG: vectorized similarity search against historical failures (Chroma / Pinecone)
-- Human-friendly reports (Markdown / Jinja2) and Streamlit demo
+> The whole pipeline runs **offline** out of the box (deterministic fallbacks for
+> embeddings, retrieval and hypotheses). Add an `ANTHROPIC_API_KEY` to upgrade the
+> hypothesis agent to Claude.
 
-Architecture Overview
-1. Ingest: streaming reader supports single files, directories, and compressed archives.
-2. Parse: tokenization, timestamp normalization, multi-line trace grouping.
-3. Enrich: extract metadata (test ids, IPs, counters), generate embeddings (sentence-transformers).
-4. Cluster: unsupervised clustering to surface patterns and groups of similar failures.
-5. Classify & Hypothesize: classifier + LLM agent suggest probable root causes and remediation steps.
-6. RAG: retrieve similar past incidents from vector DB and include context in reports.
-7. Report: JSON, Markdown, and interactive Streamlit dashboards.
+---
 
-Agents
-- Log Parsing Agent — normalize and structure raw logs.
-- Failure Classification Agent — tag and prioritize failures.
-- Pattern Clustering Agent — find recurring failure families.
-- Root Cause Hypothesis Agent — generate concise hypotheses with evidence.
-- Report Generator Agent — compile a reproducible debug report.
+## What it does
 
-Tech Stack (recommended)
-- Python 3.9+
-- LangGraph for agent orchestration
-- sentence-transformers for embeddings
-- Chroma or Pinecone for vector DB (RAG)
-- HDBSCAN + scikit-learn for clustering
-- Drain3, regex, Pydantic for parsing & schemas
-- Streamlit / FastAPI for demo and APIs
-- Jinja2 for templated reports
+```
+raw logs ──▶ ingest ──▶ parse ──▶ classify ──▶ cluster ──▶ RAG ──▶ hypothesize ──▶ report
+            (stream)  (Drain3)   (failures)   (HDBSCAN)  (Chroma)   (Claude)      (MD/JSON)
+```
 
-Quickstart (local)
-1. Clone:
-   git clone <repo-url> && cd SVLA-Agent
-2. Create venv and install:
-   python -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-3. Run CLI (example):
-   python -m svla_agent.cli process --input ./logs --output ./reports/out.json
-4. Run demo:
-   streamlit run app/streamlit_app.py
+| Stage | Module | What happens |
+|---|---|---|
+| **Ingest** | `ingest/reader.py` | Discover & group per-source run files (`run_*.<src>.log`, gzip-aware), stream lines lazily |
+| **Parse** | `parse/parser.py` | Regex line structure (ts / subsys / level / `k=v` / multi-line dumps) + Drain3 template mining |
+| **Classify** | `classify/classifier.py` | Turn error/fatal events into prioritised `Failure` records (subsystem-aware rules) |
+| **Embed** | `embeddings/embedder.py` | sentence-transformers embeddings (deterministic hashing fallback offline) |
+| **Cluster** | `cluster/clusterer.py` | Group failures into families with `sklearn.cluster.HDBSCAN` |
+| **RAG** | `rag/store.py` | Index/query historical failures in a persistent Chroma collection (cosine) |
+| **Hypothesize** | `hypothesize/agent.py` | Claude tool-use for structured root-cause hypotheses; grounded rule-based fallback |
+| **Report** | `report/reporter.py` | Jinja2 Markdown + JSON debug reports |
+| **Evaluate** | `eval/metrics.py` | Detection P/R/F1, failure-typing P/R/F1, clustering quality, RAG recall@k |
 
-Minimal Example
-- Parse + cluster:
-  python -m svla_agent.cli process --input samples/synthetic_logs --out results/summary.json --embeddings sentence-transformers/all-MiniLM-L6-v2
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full data flow and schemas.
 
-Dataset
-- A synthetic silicon logs dataset is included in /data/synthetic for local experimentation. Use the generator script to produce controlled failure scenarios for testing clustering and RAG.
+---
 
-Evaluation & Metrics
-- Cluster quality: silhouette, Davies-Bouldin
-- Retrieval: recall@k on historical incidents
-- Hypothesis accuracy: human-labeled precision/recall in curated test suites
+## Quickstart
 
-Extending the Project
-- Add parsers for new log formats in svla_agent.parsers
-- Plug alternative vector DB backends in svla_agent.rag
-- Implement additional LLMs or prompt templates for hypothesis agent
-- Improve CI with dataset-based integration tests
+The project ships a virtualenv at `.svla/` with all dependencies installed.
 
-Contributing
-- Follow the repo's contribution guide and tests.
-- Add reproducible unit tests for parsers and clustering changes.
-- Open an issue or PR with a clear description and dataset example.
+```bash
+# 1. Generate the synthetic silicon-log dataset (100 multi-source runs + labels)
+.svla/bin/svla generate --runs 100
 
-Security & Privacy
-- Redact PII and on-chip secret tokens before indexing.
-- Secure API keys using environment variables or secret stores (do not commit keys).
+# 2. Run the full analysis pipeline -> writes reports/run_*.{json,md}
+.svla/bin/svla process
 
-License
-MIT — see LICENSE file.
+# 3. Evaluate pipeline output against the ground-truth labels
+.svla/bin/svla eval
 
-Contact
-For project collaboration, issues, or demo requests, open an issue or contact the maintainer in the repo.
+# 4. Explore results in the dashboard
+.svla/bin/streamlit run app/streamlit_app.py
+```
 
-Appendix: Useful Commands
-- Run tests: pytest -q
-- Build docker demo: docker build -t svla-agent . && docker run --rm -v $(pwd)/logs:/data svla-agent process /data
-- Generate embeddings locally: python -m svla_agent.embeddings --model all-MiniLM-L6-v2 --input logs/ --out emb/db
+> Not using the bundled venv? Install the package instead:
+> `python -m venv .venv && source .venv/bin/activate && pip install -e ".[dev,app]"`,
+> then use `svla ...` directly.
 
+A `Makefile` wraps the common flows: `make data`, `make process`, `make eval`,
+`make app`, `make check`.
+
+---
+
+## CLI
+
+```
+svla generate   Generate the synthetic silicon-log dataset
+svla process    Run the full analysis pipeline and write debug reports
+svla index      (Re)build the RAG vector store of historical failures
+svla eval       Evaluate pipeline output against ground-truth labels
+svla version    Print the version
+```
+
+Useful flags:
+
+```bash
+svla process --limit 20            # only the first N runs
+svla process --run 000007          # a single run (uses the existing RAG store)
+svla process --no-index            # skip rebuilding the vector store
+svla eval --out reports/metrics.json
+```
+
+---
+
+## Enabling Claude
+
+By default the root-cause agent uses a deterministic, rule-based fallback so the
+pipeline is fully runnable offline. To use Claude:
+
+```bash
+cp .env.example .env
+# then set ANTHROPIC_API_KEY in .env (and optionally SVLA_LLM_MODEL)
+```
+
+Configuration is read by `pydantic-settings` (prefix `SVLA_`). Key settings:
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | _unset_ | Enables Claude; unset ⇒ rule-based hypotheses |
+| `SVLA_LLM_MODEL` | `claude-opus-4-8` | Hypothesis model |
+| `SVLA_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model |
+| `SVLA_OFFLINE` | `0` | Force network-free, deterministic paths (used by CI) |
+| `SVLA_CHROMA_DIR` | `.chroma` | Vector-store location |
+| `SVLA_REPORTS_DIR` | `reports` | Where reports are written |
+
+---
+
+## Example report
+
+Each failing run produces a report like:
+
+```
+# SVLA Debug Report — Run 000001
+Status: 🔴 ANOMALOUS | Events analysed: 11,079
+
+## Failures (1)
+### 1. THERMAL_TRIP — HIGH  (SYSTEM/THERMAL)
+   ... evidence (WARN context + ERROR/FATAL + register dumps) ...
+
+## Root-Cause Hypotheses
+- Root cause: Junction temperature exceeded the thermal trip threshold
+- Confidence: 95% (rule-based)
+- Recommended actions: inspect heatsink/TIM; harden fan/DVFS profile; ...
+- Similar historical incidents: run 000002 (RC_FAN_PROFILE_BAD, sim 1.0), ...
+```
+
+---
+
+## Dataset
+
+The synthetic generator (`svla_agent.datagen.generator`) produces realistic
+multi-source runs (`system`, `fw`, `pcie`, `ddr`, `pmu`, `thermal`, `noc`) with
+dense telemetry noise and injected failure patterns:
+
+`PCIE_TIMEOUT`, `DDR_ECC`, `PMU_DROOP`, `THERMAL_TRIP`, `FW_EXCEPTION`, `NOC_TIMEOUT`.
+
+Ground-truth labels (`data/labels/run_*.label.json`) record the injected patterns
+and root-cause ids, and drive both RAG seeding and evaluation. `data/` is
+git-ignored — regenerate it with `svla generate`.
+
+---
+
+## Development
+
+```bash
+make dev-install     # pip install -e ".[dev,app]" + pre-commit
+make check           # ruff + mypy + pytest
+make test            # pytest only
+```
+
+The test suite runs fully offline and deterministically against a small generated
+dataset. CI (GitHub Actions) lints, type-checks and tests on Python 3.10–3.12.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## Tech stack
+
+Python 3.10+ · pydantic / pydantic-settings · Drain3 · sentence-transformers ·
+scikit-learn (HDBSCAN) · ChromaDB · Anthropic Claude · Jinja2 · Typer · Rich ·
+Streamlit · pytest / ruff / mypy.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
