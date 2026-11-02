@@ -1,3 +1,11 @@
+"""Synthetic post-silicon validation log generator.
+
+Produces realistic multi-source runs (``system``/``fw``/``pcie``/``ddr``/``pmu``/
+``thermal``/``noc``) with dense telemetry noise, injected failure patterns and
+per-root-cause evidence markers, plus ground-truth label files.
+"""
+
+import gzip
 import json
 import os
 import random
@@ -55,6 +63,195 @@ def hex32(rng: random.Random) -> str:
 
 def hex16(rng: random.Random) -> str:
     return "0x" + f"{rng.randint(0, 2**16 - 1):04X}"
+
+
+# ----------------------------
+# Root-cause evidence markers
+# ----------------------------
+# Each injected failure pattern carries a specific root cause. Real logs usually
+# contain a tell-tale line for it (a fan running slow, a refclk warning, ...), but
+# not always - so each marker is emitted with probability MARKER_P and the agent
+# has to fall back to retrieval/prior knowledge the rest of the time.
+MARKER_P = 0.9
+
+
+def rc_marker_events(rng: random.Random, t: int, rc_id: str, meta: dict) -> list[Event]:
+    """Return the WARN/INFO line(s) that betray ``rc_id`` (possibly none)."""
+    if rng.random() > MARKER_P:
+        return []
+    t = t + jitter(rng, 30, 15)
+    table: dict[str, Event] = {
+        # PCIE_TIMEOUT
+        "RC_PCIE_REFCLK_GATING": Event(
+            t,
+            "pcie",
+            "PCIE",
+            "WARN",
+            "Refclk instability detected",
+            {"ppm": str(rng.randint(300, 900)), "pll_lock": "0"},
+        ),
+        "RC_PCIE_SI_MARGIN_LOW": Event(
+            t,
+            "pcie",
+            "PCIE",
+            "WARN",
+            "Lane margining below threshold",
+            {"eye_width_ui": f"0.{rng.randint(12, 24)}", "threshold_ui": "0.30"},
+        ),
+        "RC_PCIE_ASPM_MISCONFIG": Event(
+            t,
+            "pcie",
+            "PCIE",
+            "WARN",
+            "ASPM L1 entry during training",
+            {"aspm": rng.choice(["L1.1", "L1.2"]), "clkreq": "asserted"},
+        ),
+        "RC_PCIE_EQ_TUNING": Event(
+            t,
+            "pcie",
+            "PCIE",
+            "WARN",
+            "Equalization phase failed",
+            {"phase": str(rng.randint(2, 3)), "preset": f"P{rng.randint(0, 9)}"},
+        ),
+        # DDR_ECC
+        "RC_DDR_TIMING_VIOLATION": Event(
+            t,
+            "ddr",
+            "DDR",
+            "WARN",
+            "Timing parameter violation",
+            {"param": rng.choice(["tRFC", "tRCD", "tRP"]), "slack_ps": str(-rng.randint(20, 160))},
+        ),
+        "RC_DDR_TRAINING_EDGE": Event(
+            t,
+            "ddr",
+            "DDR",
+            "WARN",
+            "Read training margin low",
+            {"margin_ps": str(rng.randint(8, 40)), "byte_lane": str(rng.randint(0, 7))},
+        ),
+        "RC_PMU_DROOP_UNDER_LOAD": Event(
+            t,
+            "pmu",
+            "PMU",
+            "WARN",
+            "Fast droop event",
+            {"rail": "VDDQ", "mv_before": "1100", "mv_after": str(1100 - rng.randint(90, 180))},
+        ),
+        "RC_DDR_CDC_GLITCH": Event(
+            t,
+            "ddr",
+            "DDR",
+            "WARN",
+            "CDC synchronizer glitch",
+            {"fifo": rng.choice(["rd_fifo", "wr_fifo"]), "domain": "phy->ctrl"},
+        ),
+        # PMU_DROOP
+        "RC_LOAD_STEP_SPIKE": Event(
+            t,
+            "pmu",
+            "PMU",
+            "WARN",
+            "Load step detected",
+            {"di_dt_a_us": str(rng.randint(40, 120)), "rail": "VCORE"},
+        ),
+        "RC_INSUFFICIENT_DECOUPLING": Event(
+            t,
+            "pmu",
+            "PMU",
+            "WARN",
+            "Rail ringing after transient",
+            {"undershoot_mv": str(rng.randint(60, 140)), "ring_freq_mhz": str(rng.randint(2, 9))},
+        ),
+        "RC_REGULATOR_LIMIT": Event(
+            t,
+            "pmu",
+            "PMU",
+            "WARN",
+            "Regulator current limit hit",
+            {"i_limit_ma": str(rng.choice([1500, 1800, 2000])), "rail": "VCORE"},
+        ),
+        # THERMAL_TRIP
+        "RC_HEATSINK_POOR": Event(
+            t,
+            "thermal",
+            "THERMAL",
+            "WARN",
+            "Sensor-to-ambient delta high",
+            {"delta_c": str(rng.randint(55, 80)), "ambient_c": str(meta["temp_c"])},
+        ),
+        "RC_FAN_PROFILE_BAD": Event(
+            t,
+            "thermal",
+            "THERMAL",
+            "WARN",
+            "Fan speed below profile",
+            {"rpm": str(rng.randint(900, 1800)), "target_rpm": str(rng.randint(3200, 4200))},
+        ),
+        "RC_WORKLOAD_BURST": Event(
+            t,
+            "pmu",
+            "PMU",
+            "WARN",
+            "Power burst detected",
+            {"p_w": str(rng.randint(28, 45)), "dur_ms": str(rng.randint(800, 4000))},
+        ),
+        # FW_EXCEPTION
+        "RC_FW_RACE_CONDITION": Event(
+            t,
+            "fw",
+            "FW",
+            "WARN",
+            "Mutex contention timeout",
+            {"lock": rng.choice(["svc_lock", "dma_lock", "irq_lock"]), "waiter": "noc_worker"},
+        ),
+        "RC_FW_NULL_DEREF": Event(
+            t,
+            "fw",
+            "FW",
+            "WARN",
+            "Fault address near null",
+            {"dfar": f"0x{rng.randint(0, 0x3F):08X}", "access": "read"},
+        ),
+        "RC_FW_STACK_OVERFLOW": Event(
+            t,
+            "fw",
+            "FW",
+            "WARN",
+            "Stack watermark exceeded",
+            {
+                "task": rng.choice(["pcie_service", "ddr_isr", "main_loop"]),
+                "used_pct": str(rng.randint(95, 100)),
+            },
+        ),
+        # NOC_TIMEOUT
+        "RC_NOC_QOS_STARVATION": Event(
+            t,
+            "noc",
+            "NOC",
+            "WARN",
+            "QoS credit starvation",
+            {"initiator": rng.choice(["CPU0", "DMA", "PCIE"]), "credits": "0"},
+        ),
+        "RC_NOC_DEADLOCK": Event(
+            t,
+            "noc",
+            "NOC",
+            "WARN",
+            "Dependency cycle suspected",
+            {"ring": rng.choice(["R0", "R1"]), "members": str(rng.randint(2, 4))},
+        ),
+        "RC_DMA_BURST_OVERFLOW": Event(
+            t,
+            "noc",
+            "NOC",
+            "WARN",
+            "DMA burst overflow",
+            {"channel": str(rng.randint(0, 7)), "burst_len": str(rng.choice([256, 512, 1024]))},
+        ),
+    }
+    return [table[rc_id]]
 
 
 # ----------------------------
@@ -247,10 +444,24 @@ def fw_stack_trace(rng: random.Random) -> list[str]:
 
 def inject_pcie_ltssm_timeout(rng: random.Random, t0: int, meta: dict) -> tuple[list[Event], dict]:
     lane = str(rng.randint(0, meta["pcie_lanes"] - 1))
+    rc_id = rng.choice(
+        [
+            "RC_PCIE_REFCLK_GATING",
+            "RC_PCIE_SI_MARGIN_LOW",
+            "RC_PCIE_ASPM_MISCONFIG",
+            "RC_PCIE_EQ_TUNING",
+        ]
+    )
+    recovery_reason = {
+        "RC_PCIE_EQ_TUNING": "eq_fail",
+        "RC_PCIE_REFCLK_GATING": "rx_detect_fail",
+        "RC_PCIE_SI_MARGIN_LOW": "deskew_fail",
+    }.get(rc_id, rng.choice(["rx_detect_fail", "eq_fail", "deskew_fail"]))
     ev: list[Event] = []
     t = t0
 
     ev.append(Event(t, "pcie", "PCIE", "INFO", "LTSSM -> Detect", {"lane": lane}))
+    ev.extend(rc_marker_events(rng, t, rc_id, meta))
     for _ in range(rng.randint(3, 7)):
         t += jitter(rng, 120, 40)
         ev.append(Event(t, "pcie", "PCIE", "INFO", "LTSSM -> Polling", {"lane": lane}))
@@ -262,7 +473,7 @@ def inject_pcie_ltssm_timeout(rng: random.Random, t0: int, meta: dict) -> tuple[
                 "PCIE",
                 "WARN",
                 "LTSSM -> Recovery",
-                {"lane": lane, "reason": rng.choice(["rx_detect_fail", "eq_fail", "deskew_fail"])},
+                {"lane": lane, "reason": recovery_reason},
             )
         )
 
@@ -338,14 +549,7 @@ def inject_pcie_ltssm_timeout(rng: random.Random, t0: int, meta: dict) -> tuple[
     label = {
         "pattern_id": "P_PCIE_LTSSM_TIMEOUT",
         "failure_type": "PCIE_TIMEOUT",
-        "root_cause_id": rng.choice(
-            [
-                "RC_PCIE_REFCLK_GATING",
-                "RC_PCIE_SI_MARGIN_LOW",
-                "RC_PCIE_ASPM_MISCONFIG",
-                "RC_PCIE_EQ_TUNING",
-            ]
-        ),
+        "root_cause_id": rc_id,
         "start_ts_ms": t0,
         "end_ts_ms": t,
         "severity": "high",
@@ -358,6 +562,14 @@ def inject_ddr_ecc_then_ue(rng: random.Random, t0: int, meta: dict) -> tuple[lis
     t = t0
     ch = str(rng.randint(0, 1))
     bank = str(rng.randint(0, 7))
+    rc_id = rng.choice(
+        [
+            "RC_DDR_TIMING_VIOLATION",
+            "RC_DDR_TRAINING_EDGE",
+            "RC_PMU_DROOP_UNDER_LOAD",
+            "RC_DDR_CDC_GLITCH",
+        ]
+    )
 
     t += jitter(rng, 60, 20)
     ev.append(
@@ -370,6 +582,7 @@ def inject_ddr_ecc_then_ue(rng: random.Random, t0: int, meta: dict) -> tuple[lis
             {"ch": ch, "bank": bank, "delta": str(rng.randint(20, 120))},
         )
     )
+    ev.extend(rc_marker_events(rng, t, rc_id, meta))
 
     t += jitter(rng, 120, 40)
     ev.append(
@@ -436,14 +649,7 @@ def inject_ddr_ecc_then_ue(rng: random.Random, t0: int, meta: dict) -> tuple[lis
     label = {
         "pattern_id": "P_DDR_ECC_UE",
         "failure_type": "DDR_ECC",
-        "root_cause_id": rng.choice(
-            [
-                "RC_DDR_TIMING_VIOLATION",
-                "RC_DDR_TRAINING_EDGE",
-                "RC_PMU_DROOP_UNDER_LOAD",
-                "RC_DDR_CDC_GLITCH",
-            ]
-        ),
+        "root_cause_id": rc_id,
         "start_ts_ms": t0,
         "end_ts_ms": t,
         "severity": "high",
@@ -458,8 +664,15 @@ def inject_pmu_droop_reset_with_hang(
     t = t0
     v_before = meta["voltage_mv"]
     v_after = v_before - rng.randint(120, 280)
+    rc_id = rng.choice(["RC_LOAD_STEP_SPIKE", "RC_INSUFFICIENT_DECOUPLING", "RC_REGULATOR_LIMIT"])
+    cause = {
+        "RC_LOAD_STEP_SPIKE": "load_step",
+        "RC_REGULATOR_LIMIT": "regulator_limit",
+        "RC_INSUFFICIENT_DECOUPLING": "pll_spike",
+    }[rc_id]
 
     t += jitter(rng, 20, 8)
+    ev.extend(rc_marker_events(rng, t - 40, rc_id, meta))
     ev.append(
         Event(
             t,
@@ -471,7 +684,7 @@ def inject_pmu_droop_reset_with_hang(
                 "rail": "VCORE",
                 "mv_before": str(v_before),
                 "mv_after": str(v_after),
-                "cause": rng.choice(["load_step", "regulator_limit", "pll_spike"]),
+                "cause": cause,
             },
         )
     )
@@ -500,9 +713,7 @@ def inject_pmu_droop_reset_with_hang(
     label = {
         "pattern_id": "P_PMU_DROOP_WDOG_RESET",
         "failure_type": "PMU_DROOP",
-        "root_cause_id": rng.choice(
-            ["RC_LOAD_STEP_SPIKE", "RC_INSUFFICIENT_DECOUPLING", "RC_REGULATOR_LIMIT"]
-        ),
+        "root_cause_id": rc_id,
         "start_ts_ms": t0,
         "end_ts_ms": t_hang_end + 2,
         "severity": "high",
@@ -515,6 +726,7 @@ def inject_thermal_trip(rng: random.Random, t0: int, meta: dict) -> tuple[list[E
     t = t0
     start = max(meta["temp_c"], rng.randint(85, 95))
     peak = rng.randint(106, 122)
+    rc_id = rng.choice(["RC_HEATSINK_POOR", "RC_FAN_PROFILE_BAD", "RC_WORKLOAD_BURST"])
 
     t += jitter(rng, 200, 60)
     ev.append(
@@ -527,6 +739,7 @@ def inject_thermal_trip(rng: random.Random, t0: int, meta: dict) -> tuple[list[E
             {"t_c": str(start), "policy": "DVFS"},
         )
     )
+    ev.extend(rc_marker_events(rng, t, rc_id, meta))
 
     t += jitter(rng, 250, 80)
     ev.append(
@@ -560,9 +773,7 @@ def inject_thermal_trip(rng: random.Random, t0: int, meta: dict) -> tuple[list[E
     label = {
         "pattern_id": "P_THERMAL_TRIP",
         "failure_type": "THERMAL_TRIP",
-        "root_cause_id": rng.choice(
-            ["RC_HEATSINK_POOR", "RC_FAN_PROFILE_BAD", "RC_WORKLOAD_BURST"]
-        ),
+        "root_cause_id": rc_id,
         "start_ts_ms": t0,
         "end_ts_ms": t,
         "severity": "high",
@@ -573,10 +784,12 @@ def inject_thermal_trip(rng: random.Random, t0: int, meta: dict) -> tuple[list[E
 def inject_fw_exception(rng: random.Random, t0: int, meta: dict) -> tuple[list[Event], dict]:
     ev: list[Event] = []
     t = t0
+    rc_id = rng.choice(["RC_FW_RACE_CONDITION", "RC_FW_NULL_DEREF", "RC_FW_STACK_OVERFLOW"])
 
     # subtle warnings first
     t += jitter(rng, 40, 15)
     ev.append(Event(t, "fw", "FW", "WARN", "Null pointer guard triggered", {"ptr": hex32(rng)}))
+    ev.extend(rc_marker_events(rng, t, rc_id, meta))
     t += jitter(rng, 60, 20)
     ev.append(
         Event(
@@ -619,9 +832,7 @@ def inject_fw_exception(rng: random.Random, t0: int, meta: dict) -> tuple[list[E
     label = {
         "pattern_id": "P_FW_EXCEPTION",
         "failure_type": "FW_EXCEPTION",
-        "root_cause_id": rng.choice(
-            ["RC_FW_RACE_CONDITION", "RC_FW_NULL_DEREF", "RC_FW_STACK_OVERFLOW"]
-        ),
+        "root_cause_id": rc_id,
         "start_ts_ms": t0,
         "end_ts_ms": t,
         "severity": "high",
@@ -632,6 +843,8 @@ def inject_fw_exception(rng: random.Random, t0: int, meta: dict) -> tuple[list[E
 def inject_noc_timeout(rng: random.Random, t0: int, meta: dict) -> tuple[list[Event], dict]:
     ev: list[Event] = []
     t = t0
+    rc_id = rng.choice(["RC_NOC_QOS_STARVATION", "RC_NOC_DEADLOCK", "RC_DMA_BURST_OVERFLOW"])
+    ev.extend(rc_marker_events(rng, t + 100, rc_id, meta))
 
     for _ in range(rng.randint(3, 6)):
         t += jitter(rng, 120, 50)
@@ -689,9 +902,7 @@ def inject_noc_timeout(rng: random.Random, t0: int, meta: dict) -> tuple[list[Ev
     label = {
         "pattern_id": "P_NOC_TXN_TIMEOUT",
         "failure_type": "NOC_TIMEOUT",
-        "root_cause_id": rng.choice(
-            ["RC_NOC_QOS_STARVATION", "RC_NOC_DEADLOCK", "RC_DMA_BURST_OVERFLOW"]
-        ),
+        "root_cause_id": rc_id,
         "start_ts_ms": t0,
         "end_ts_ms": t,
         "severity": "high",
@@ -843,6 +1054,7 @@ def gen_run(
     seed: int,
     anomaly_rate: float = 0.35,
     noise_lines: tuple[int, int] = (6000, 18000),
+    compress: bool = False,
 ) -> None:
     rng = random.Random(seed)
     meta = gen_meta(rng, run_id)
@@ -884,7 +1096,10 @@ def gen_run(
     buckets = split_by_source(events)
     for src, evs in buckets.items():
         path = os.path.join(out_logs, f"run_{run_id:06d}.{src}.log")
-        with open(path, "w") as f:
+        opener = open if not compress else gzip.open
+        if compress:
+            path += ".gz"
+        with opener(path, "wt", encoding="utf-8") as f:  # type: ignore[operator]
             for ln in header_lines(meta):
                 f.write(ln + "\n")
             f.write("\n")
@@ -913,6 +1128,7 @@ def generate(
     base_seed: int = 424200,
     anomaly_rate: float = 0.35,
     noise_lines: tuple[int, int] = (8000, 22000),
+    compress: bool = False,
 ) -> tuple[str, str, int]:
     """Generate ``runs`` synthetic multi-source validation runs.
 
@@ -926,6 +1142,7 @@ def generate(
             seed=base_seed + i,
             anomaly_rate=anomaly_rate,
             noise_lines=noise_lines,
+            compress=compress,
         )
     return out_logs, out_labels, runs
 
