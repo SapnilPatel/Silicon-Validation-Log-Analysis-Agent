@@ -37,7 +37,10 @@ class InMemoryVectorStore(BaseVectorStore):
         self._docs: list[str] = []
         self._vecs: np.ndarray | None = None
         self._persist = persist
-        self._path: Path = self.settings.chroma_dir / f"{self.settings.rag_collection}.memory.npz"
+        self._path: Path = (
+            self.settings.chroma_dir
+            / f"{self.settings.rag_collection}__{self.embedder.space}.memory.npz"
+        )
         if persist:
             self._load()
 

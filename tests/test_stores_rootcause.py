@@ -180,3 +180,43 @@ def test_evaluate_holdout_reports_root_cause_accuracy(pipeline, settings, datase
     assert pipeline.store.count() == len(result.failures)
     truth = root_cause_map(labels)
     assert all(truth.get(f.failure_id) for f in result.failures)
+
+
+def test_stores_are_namespaced_by_embedding_space(settings: Settings, embedder):
+    """A store built with one embedding backend must not be queried with another."""
+    from svla_agent.embeddings.embedder import Embedder
+    from svla_agent.rag.chroma_store import ChromaVectorStore
+
+    class FakeWideEmbedder(Embedder):
+        def __init__(self):
+            super().__init__(offline=True)
+            self.backend = "fake-384"
+
+        @property
+        def space(self) -> str:
+            return "fake_384"
+
+        @property
+        def dim(self) -> int:
+            return 384
+
+        def encode(self, texts):
+            import numpy as np
+
+            out = np.zeros((len(texts), 384), dtype=np.float32)
+            out[:, 0] = 1.0
+            return out
+
+    f = _failure("PCIE_TIMEOUT", ["PCIE: Link training timeout"], "7")
+    wide = ChromaVectorStore(settings, FakeWideEmbedder())
+    wide.index([f])
+    narrow = ChromaVectorStore(settings, embedder)  # hashing, 256-d, same chroma_dir
+    assert wide.collection_name != narrow.collection_name
+    assert narrow.count() == 0 and narrow.query(f.signature) == []  # no dimension error
+    narrow.index([f])
+    assert narrow.query(f.signature)[0].failure_id == f.failure_id
+    mem_settings = settings.model_copy(update={"vector_backend": "memory"})
+    assert (
+        InMemoryVectorStore(mem_settings, FakeWideEmbedder())._path
+        != InMemoryVectorStore(mem_settings, embedder)._path
+    )

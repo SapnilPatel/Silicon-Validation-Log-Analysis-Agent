@@ -34,8 +34,11 @@ from .config import Settings, get_settings
 from .hypothesize.agent import HypothesisAgent
 from .hypothesize.knowledge import ROOT_CAUSES
 from .ingest.reader import discover_runs
+from .logging_config import get_logger
 from .models import RunReport
 from .pipeline import AnalysisPipeline
+
+logger = get_logger(__name__)
 
 app = FastAPI(
     title="SVLA-Agent API",
@@ -51,7 +54,12 @@ app = FastAPI(
 
 @lru_cache(maxsize=1)
 def get_pipeline() -> AnalysisPipeline:
-    return AnalysisPipeline(get_settings())
+    """Shared pipeline; builds the historical index on first use if it is empty."""
+    pipeline = AnalysisPipeline(get_settings())
+    if pipeline.store.count() == 0 and discover_runs(pipeline.settings.logs_dir):
+        logger.info("Vector store empty - indexing %s", pipeline.settings.logs_dir)
+        pipeline.index_corpus()
+    return pipeline
 
 
 def _pipeline_for(key: str | None) -> AnalysisPipeline:

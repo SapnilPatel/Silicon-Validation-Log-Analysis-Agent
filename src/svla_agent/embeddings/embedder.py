@@ -9,6 +9,7 @@ working without surprises. The active backend is reported via :attr:`backend`.
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any
 
 import numpy as np
@@ -57,6 +58,19 @@ class Embedder:
             )
             self._offline = True
             self.backend = "hashing"
+
+    @property
+    def space(self) -> str:
+        """Short id of the vector space (backend + dimension).
+
+        Vectors from different backends are not comparable, so stores namespace
+        their collections/files by this value.
+        """
+        self._ensure_model()
+        if self._model is not None:
+            slug = re.sub(r"[^a-z0-9]+", "_", self.model_name.lower()).strip("_")[-40:]
+            return f"st_{slug}_{self.dim}"
+        return f"hash_{_HASH_DIM}"
 
     @property
     def dim(self) -> int:

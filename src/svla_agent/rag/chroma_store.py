@@ -41,10 +41,16 @@ class ChromaVectorStore(BaseVectorStore):
                 settings=ChromaSettings(anonymized_telemetry=False, allow_reset=True),
             )
             self._collection = self._client.get_or_create_collection(
-                name=self.settings.rag_collection,
-                metadata={"hnsw:space": "cosine"},
+                name=self.collection_name,
+                metadata={"hnsw:space": "cosine", "embedding_space": self.embedder.space},
             )
         return self._collection
+
+    @property
+    def collection_name(self) -> str:
+        """Collection per embedding space: 384-d transformer vectors must never be
+        queried with 256-d hashing vectors (Chroma rejects the mismatch at query time)."""
+        return f"{self.settings.rag_collection}__{self.embedder.space}"
 
     # -- write -------------------------------------------------------------- #
     def index(
@@ -70,7 +76,7 @@ class ChromaVectorStore(BaseVectorStore):
                 for f in failures
             ],
         )
-        logger.info("Indexed %d failures into '%s'", len(failures), self.settings.rag_collection)
+        logger.info("Indexed %d failures into '%s'", len(failures), self.collection_name)
         return len(failures)
 
     # -- read --------------------------------------------------------------- #
@@ -119,11 +125,11 @@ class ChromaVectorStore(BaseVectorStore):
             return 0
 
     def reset(self) -> None:
-        name = self.settings.rag_collection
+        name = self.collection_name
         _ = self.collection  # ensure client exists
         assert self._client is not None
         with contextlib.suppress(Exception):  # already gone
             self._client.delete_collection(name)
         self._collection = self._client.get_or_create_collection(
-            name=name, metadata={"hnsw:space": "cosine"}
+            name=name, metadata={"hnsw:space": "cosine", "embedding_space": self.embedder.space}
         )
