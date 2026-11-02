@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from .classify.classifier import classify_run
+from .classify.classifier import classify_run, deduplicate
 from .cluster.clusterer import cluster_failures
 from .config import Settings, get_settings
 from .embeddings.embedder import Embedder
@@ -23,7 +23,8 @@ from .labels import load_labels, root_cause_map
 from .logging_config import get_logger
 from .models import Failure, FailureCluster, ParsedRun, RunReport
 from .parse.parser import parse_run
-from .rag.store import VectorStore
+from .rag.base import BaseVectorStore
+from .rag.store import make_store
 from .report.reporter import Reporter
 
 logger = get_logger(__name__)
@@ -47,13 +48,13 @@ class AnalysisPipeline:
         self,
         settings: Settings | None = None,
         embedder: Embedder | None = None,
-        store: VectorStore | None = None,
+        store: BaseVectorStore | None = None,
         agent: HypothesisAgent | None = None,
         reporter: Reporter | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.embedder = embedder or Embedder()
-        self.store = store or VectorStore(self.settings, self.embedder)
+        self.store = store or make_store(self.settings, self.embedder)
         self.agent = agent or HypothesisAgent(self.settings)
         self.reporter = reporter or Reporter(self.settings)
 
@@ -74,6 +75,12 @@ class AnalysisPipeline:
         if hypothesise:
             for failure in failures:
                 similar = self.store.query(failure.signature, exclude_failure_id=failure.failure_id)
+                # Single-run mode has no corpus to count duplicates in; exact matches in
+                # the historical store are the next best thing.
+                exact = sum(
+                    1 for s in similar if s.distance < 1e-4 and s.signature == failure.signature
+                )
+                failure.occurrences = max(failure.occurrences, 1 + exact)
                 hypotheses.append(self.agent.generate(failure, similar, failure.cluster_id))
 
         present = {
@@ -101,11 +108,13 @@ class AnalysisPipeline:
         hypotheses: bool = True,
         limit: int | None = None,
         progress: ProgressCb | None = None,
+        run_files: list[RunFiles] | None = None,
     ) -> PipelineResult:
         logs_dir = logs_dir or str(self.settings.logs_dir)
         labels_dir = labels_dir or str(self.settings.labels_dir)
 
-        run_files = discover_runs(logs_dir)
+        if run_files is None:
+            run_files = discover_runs(logs_dir)
         if limit is not None:
             run_files = run_files[:limit]
         total = len(run_files)
@@ -124,7 +133,8 @@ class AnalysisPipeline:
             if progress:
                 progress("parse", i, total)
 
-        # Cluster the corpus of failures into families.
+        # Corpus-level dedup (annotates recurrence), then cluster into families.
+        all_failures = deduplicate(all_failures)
         all_failures, clusters = cluster_failures(all_failures, self.embedder)
         clusters_by_fid = {fid: c for c in clusters for fid in c.failure_ids}
 
@@ -190,6 +200,7 @@ class AnalysisPipeline:
             failures.extend(classify_run(parse_run(rf)))
         if not failures:
             return 0
+        failures = deduplicate(failures)
         failures, _ = cluster_failures(failures, self.embedder)
         rc_map = root_cause_map(load_labels(labels_dir))
         self.store.reset()

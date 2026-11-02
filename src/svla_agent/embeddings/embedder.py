@@ -9,6 +9,7 @@ working without surprises. The active backend is reported via :attr:`backend`.
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 
 import numpy as np
 
@@ -35,7 +36,7 @@ class Embedder:
         settings = get_settings()
         self.model_name = model_name or settings.embedding_model
         self._offline = settings.offline if offline is None else offline
-        self._model = None
+        self._model: Any = None
         self.backend = "hashing" if self._offline else "pending"
 
     # -- backend management ------------------------------------------------- #

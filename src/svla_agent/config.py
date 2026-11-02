@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    llm_provider: str = "anthropic"  # pluggable; see hypothesize/llm.py
     llm_model: str = "claude-opus-4-8"
     llm_max_tokens: int = 1024
     llm_temperature: float = 0.0
@@ -36,6 +37,7 @@ class Settings(BaseSettings):
     cluster_min_samples: int = 1
 
     # --- RAG ---
+    vector_backend: str = "chroma"  # "chroma" (persistent) or "memory" (numpy, file-backed)
     chroma_dir: Path = Path(".chroma")
     rag_collection: str = "svla_failures"
     rag_top_k: int = 5
@@ -44,6 +46,15 @@ class Settings(BaseSettings):
     logs_dir: Path = Path("data/silicon_logs")
     labels_dir: Path = Path("data/labels")
     reports_dir: Path = Path("reports")
+
+    # --- Classification ---
+    evidence_window_ms: int = 8000  # how far before the first error to look for WARN context
+
+    # --- Privacy ---
+    redact: bool = True  # scrub PII / secrets at parse time, before indexing or prompting
+
+    # --- Evaluation ---
+    eval_holdout: float = 0.3  # fraction of runs held out as "new" incidents for RAG/RC eval
 
     # --- Behaviour ---
     log_level: str = "INFO"

@@ -8,8 +8,10 @@ enriched with nearby ``WARN`` context as evidence, and assigned a severity.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 
+from ..config import get_settings
 from ..models import Event, Failure, LogLevel, ParsedRun, Severity
 
 # Ordered (failure_type, predicate-keywords) rules. First match wins.
@@ -34,7 +36,21 @@ _SUBSYS_FALLBACK: dict[str, str] = {
     "NOC": "NOC_TIMEOUT",
 }
 
-_MAX_EVIDENCE = 12
+_MAX_EVIDENCE = 16
+_MAX_CONTEXT = 8
+
+# Periodic telemetry templates carry no diagnostic signal; keep them out of the
+# evidence/signature so they do not dilute clustering and retrieval.
+_TELEMETRY_MESSAGES = {
+    "temp sample",
+    "rail telemetry",
+    "ddr counters",
+    "link stats",
+    "fabric telemetry",
+    "heartbeat",
+    "checkpoint",
+    "loop tick",
+}
 
 _SEVERITY_RANK = {
     Severity.LOW: 0,
@@ -62,10 +78,28 @@ def _severity_for(events: list[Event]) -> Severity:
     return Severity.MEDIUM
 
 
+def _is_telemetry(event: Event) -> bool:
+    return event.message.strip().lower() in _TELEMETRY_MESSAGES
+
+
+def _distinct_context(context: list[Event], limit: int = _MAX_CONTEXT) -> list[Event]:
+    """Keep the first occurrence of each WARN template, newest ``limit`` templates.
+
+    A pattern may repeat one warning many times (``LTSSM -> Recovery`` x7); keeping
+    only the tail would push out the single, earlier tell-tale line that names the
+    root cause.
+    """
+    first_by_template: dict[str, Event] = {}
+    for ev in context:
+        first_by_template.setdefault(ev.signature, ev)
+    distinct = sorted(first_by_template.values(), key=lambda e: e.ts_ms)
+    return distinct[-limit:]
+
+
 def _evidence_for(error_events: list[Event], context: list[Event]) -> list[str]:
     """Build human-readable evidence lines: leading WARN context + the errors."""
     lines: list[str] = []
-    for ev in context[-3:]:
+    for ev in _distinct_context(context):
         lines.append(ev.raw or f"{ev.subsys}: {ev.level.value}: {ev.message}")
     for ev in error_events:
         lines.append(ev.raw or f"{ev.subsys}: {ev.level.value}: {ev.message}")
@@ -75,16 +109,25 @@ def _evidence_for(error_events: list[Event], context: list[Event]) -> list[str]:
     return lines[:_MAX_EVIDENCE]
 
 
-def _signature(failure_type: str, events: list[Event]) -> str:
-    """Normalised, low-cardinality text used for embedding/clustering/RAG."""
+def _signature(failure_type: str, events: list[Event], context: list[Event]) -> str:
+    """Normalised, low-cardinality text used for embedding/clustering/RAG.
+
+    Error/fatal templates come first, followed by the (non-telemetry) WARN
+    templates that preceded them - those carry the root-cause tell-tales.
+    """
     templates: list[str] = []
     seen: set[str] = set()
-    for ev in events:
+    for ev in [*events, *_distinct_context(context)]:
         sig = ev.signature
         if sig not in seen:
             seen.add(sig)
             templates.append(sig)
-    return f"{failure_type} | " + " ; ".join(templates[:6])
+    return f"{failure_type} | " + " ; ".join(templates[:10])
+
+
+def fingerprint_for(signature: str) -> str:
+    """Short stable hash of a signature; identical failures share it across runs."""
+    return hashlib.sha1(signature.encode("utf-8")).hexdigest()[:12]
 
 
 def classify_run(parsed: ParsedRun) -> list[Failure]:
@@ -98,15 +141,19 @@ def classify_run(parsed: ParsedRun) -> list[Failure]:
     if not typed:
         return []
 
-    warns = [e for e in parsed.events if e.level is LogLevel.WARN]
+    window_ms = get_settings().evidence_window_ms
+    warns = [e for e in parsed.events if e.level is LogLevel.WARN and not _is_telemetry(e)]
     failures: list[Failure] = []
     for ftype, evs in typed.items():
         evs.sort(key=lambda e: e.ts_ms)
         first_ts, last_ts = evs[0].ts_ms, evs[-1].ts_ms
         subsystems = {e.subsys for e in evs}
-        # WARN events of the same subsystems just before the failure window.
-        context = [w for w in warns if w.subsys in subsystems and w.ts_ms <= last_ts]
+        # Non-telemetry WARN events (any subsystem) shortly before / during the
+        # failure window - cross-subsystem context is where root causes hide
+        # (e.g. a PMU droop preceding a DDR uncorrectable error).
+        context = [w for w in warns if first_ts - window_ms <= w.ts_ms <= last_ts]
         primary = max(evs, key=lambda e: (e.level.rank, e.ts_ms))
+        signature = _signature(ftype, evs, context)
         failures.append(
             Failure(
                 failure_id=f"{parsed.run_id}:{ftype}",
@@ -117,9 +164,10 @@ def classify_run(parsed: ParsedRun) -> list[Failure]:
                 first_ts_ms=first_ts,
                 last_ts_ms=last_ts,
                 summary=f"{ftype} in {'/'.join(sorted(subsystems))}: {primary.message}",
-                signature=_signature(ftype, evs),
+                signature=signature,
                 evidence=_evidence_for(evs, context),
                 kv=primary.kv,
+                fingerprint=fingerprint_for(signature),
             )
         )
 
@@ -132,4 +180,20 @@ def classify_runs(parsed_runs: Iterable[ParsedRun]) -> list[Failure]:
     out: list[Failure] = []
     for pr in parsed_runs:
         out.extend(classify_run(pr))
-    return out
+    return deduplicate(out)
+
+
+def deduplicate(failures: list[Failure]) -> list[Failure]:
+    """Corpus-level dedup: count how often each fingerprint recurs.
+
+    Failures are *kept* (each run still gets its report) but annotated with
+    ``occurrences`` so recurring, already-known failures are visible at a glance.
+    """
+    counts: dict[str, int] = {}
+    for f in failures:
+        if not f.fingerprint:
+            f.fingerprint = fingerprint_for(f.signature)
+        counts[f.fingerprint] = counts.get(f.fingerprint, 0) + 1
+    for f in failures:
+        f.occurrences = counts[f.fingerprint]
+    return failures

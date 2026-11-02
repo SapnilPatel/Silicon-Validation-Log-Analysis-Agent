@@ -108,6 +108,12 @@ class Failure(BaseModel):
     )
     kv: dict[str, str] = Field(default_factory=dict)
     cluster_id: int | None = None
+    fingerprint: str = Field(
+        default="", description="Stable hash of the signature; equal across duplicate failures."
+    )
+    occurrences: int = Field(
+        default=1, description="How many failures in the corpus share this fingerprint."
+    )
 
     @property
     def duration_ms(self) -> int:
@@ -147,6 +153,9 @@ class Hypothesis(BaseModel):
     failure_id: str
     cluster_id: int | None = None
     root_cause: str
+    root_cause_id: str | None = Field(
+        default=None, description="Canonical root-cause id from the knowledge base, if any."
+    )
     confidence: float = Field(..., ge=0.0, le=1.0)
     rationale: str
     recommended_actions: list[str] = Field(default_factory=list)

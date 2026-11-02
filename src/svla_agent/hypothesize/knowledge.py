@@ -1,8 +1,14 @@
-"""Domain knowledge used by the rule-based hypothesis fallback.
+"""Domain knowledge used by the hypothesis agent.
 
-Each entry maps a coarse failure type to a canonical root-cause statement and a
-short remediation playbook. This keeps the pipeline useful (and deterministic)
-when no LLM is configured, and gives the LLM a grounded prior to work from.
+Two layers:
+
+* :data:`KNOWLEDGE` — per failure type, a canonical root-cause statement, a
+  rationale and a remediation playbook. This is the grounded prior the
+  rule-based fallback and the LLM both start from.
+* :data:`ROOT_CAUSES` — per failure type, the catalogue of *specific* root
+  causes (ids match the dataset's ground-truth labels) together with the log
+  evidence markers that point at each one. The rule-based agent scores the
+  candidates against the evidence; the LLM receives them as an enum.
 """
 
 from __future__ import annotations
@@ -15,6 +21,16 @@ class RootCausePrior:
     root_cause: str
     rationale: str
     actions: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RootCause:
+    """A specific, nameable root cause and how it shows up in the logs."""
+
+    rc_id: str
+    description: str
+    markers: tuple[str, ...]  # case-insensitive substrings expected in the evidence
+    actions: tuple[str, ...] = ()
 
 
 KNOWLEDGE: dict[str, RootCausePrior] = {
@@ -104,5 +120,214 @@ KNOWLEDGE: dict[str, RootCausePrior] = {
 }
 
 
+ROOT_CAUSES: dict[str, tuple[RootCause, ...]] = {
+    "PCIE_TIMEOUT": (
+        RootCause(
+            "RC_PCIE_REFCLK_GATING",
+            "Reference clock instability / gating during link training",
+            ("refclk instability", "refclk"),
+            (
+                "Scope the refclk at the connector and SoC ball for gating/jitter",
+                "Disable spread-spectrum clocking and retest link training",
+            ),
+        ),
+        RootCause(
+            "RC_PCIE_SI_MARGIN_LOW",
+            "Lane signal-integrity margin below the receiver threshold",
+            ("lane margining below threshold", "eye_width"),
+            (
+                "Run lane-margining sweeps and compare eye width against the gen spec",
+                "Review trace length/loss budget and connector/retimer placement",
+            ),
+        ),
+        RootCause(
+            "RC_PCIE_ASPM_MISCONFIG",
+            "ASPM L1 substate entered while training, gating the link clock",
+            ("aspm l1 entry during training", "aspm"),
+            (
+                "Disable ASPM/L1 substates in firmware config and retest",
+                "Verify CLKREQ# handling between root port and endpoint",
+            ),
+        ),
+        RootCause(
+            "RC_PCIE_EQ_TUNING",
+            "Equalization preset/coefficients fail to converge at the negotiated speed",
+            ("equalization phase failed", "eq_fail"),
+            (
+                "Sweep TX presets / RX CTLE-DFE coefficients for the negotiated gen",
+                "Force a lower gen to confirm the EQ-at-speed hypothesis",
+            ),
+        ),
+    ),
+    "DDR_ECC": (
+        RootCause(
+            "RC_DDR_TIMING_VIOLATION",
+            "A DRAM timing parameter is violated at the configured frequency",
+            ("timing parameter violation", "trfc", "trcd"),
+            (
+                "Relax the flagged timing parameter and re-run the memtest",
+                "Cross-check the DRAM datasheet timings against the controller config",
+            ),
+        ),
+        RootCause(
+            "RC_DDR_TRAINING_EDGE",
+            "Read/write training converged on a marginal edge",
+            ("read training margin low", "margin_ps"),
+            (
+                "Re-run training with per-bit deskew and widen the margin window",
+                "Sweep VREF to re-centre the data eye",
+            ),
+        ),
+        RootCause(
+            "RC_PMU_DROOP_UNDER_LOAD",
+            "VDDQ droop under load corrupts DRAM accesses",
+            ("fast droop event", "rail=vddq"),
+            (
+                "Correlate the UE with the VDDQ droop and add decoupling on the rail",
+                "Tune the regulator transient response for the memory rail",
+            ),
+        ),
+        RootCause(
+            "RC_DDR_CDC_GLITCH",
+            "Clock-domain-crossing synchroniser glitch in the controller",
+            ("cdc synchronizer glitch", "cdc"),
+            (
+                "Review CDC constraints on the controller/PHY boundary",
+                "Reproduce at corner voltage/frequency to isolate the glitch",
+            ),
+        ),
+    ),
+    "PMU_DROOP": (
+        RootCause(
+            "RC_LOAD_STEP_SPIKE",
+            "A fast di/dt load step exceeds the regulator slew capability",
+            ("load step detected", "cause=load_step", "di_dt"),
+            (
+                "Throttle the DVFS/workload ramp producing the load step",
+                "Enable adaptive voltage positioning on the rail",
+            ),
+        ),
+        RootCause(
+            "RC_INSUFFICIENT_DECOUPLING",
+            "Insufficient decoupling causes undershoot/ringing after a transient",
+            ("rail ringing after transient", "undershoot_mv"),
+            (
+                "Add bulk and high-frequency decoupling close to the package",
+                "Re-simulate the PDN impedance profile",
+            ),
+        ),
+        RootCause(
+            "RC_REGULATOR_LIMIT",
+            "Regulator reaches its current limit and folds back",
+            ("regulator current limit hit", "cause=regulator_limit", "i_limit"),
+            (
+                "Raise the regulator OCP limit or split the load across phases",
+                "Confirm the regulator phase count for the measured peak current",
+            ),
+        ),
+    ),
+    "THERMAL_TRIP": (
+        RootCause(
+            "RC_HEATSINK_POOR",
+            "Poor heatsink/TIM contact — large die-to-ambient delta",
+            ("sensor-to-ambient delta high", "delta_c"),
+            (
+                "Re-seat the heatsink and replace the TIM",
+                "Measure mounting pressure against the thermal spec",
+            ),
+        ),
+        RootCause(
+            "RC_FAN_PROFILE_BAD",
+            "Fan speed stays below the profile target as temperature rises",
+            ("fan speed below profile", "target_rpm"),
+            (
+                "Fix the fan curve / PWM mapping in the thermal policy",
+                "Verify tachometer feedback and fan power",
+            ),
+        ),
+        RootCause(
+            "RC_WORKLOAD_BURST",
+            "A sustained power burst outruns the cooling headroom",
+            ("power burst detected", "p_w="),
+            (
+                "Cap the burst power or lengthen the DVFS step-down reaction",
+                "Add thermal headroom to the test's power envelope",
+            ),
+        ),
+    ),
+    "FW_EXCEPTION": (
+        RootCause(
+            "RC_FW_RACE_CONDITION",
+            "Race between service threads on a shared lock",
+            ("mutex contention timeout", "lock="),
+            (
+                "Audit lock ordering in the contended service path",
+                "Add a watchdog-visible trace around the critical section",
+            ),
+        ),
+        RootCause(
+            "RC_FW_NULL_DEREF",
+            "Null-pointer dereference in a service handler",
+            ("fault address near null", "dfar=0x0000"),
+            (
+                "Symbolicate the faulting PC and add a null guard",
+                "Fuzz the service call path with uninitialised arguments",
+            ),
+        ),
+        RootCause(
+            "RC_FW_STACK_OVERFLOW",
+            "Task stack overflow corrupts the return frame",
+            ("stack watermark exceeded", "used_pct"),
+            (
+                "Increase the task stack or reduce frame size in the hot path",
+                "Enable stack-canary checks in the debug build",
+            ),
+        ),
+    ),
+    "NOC_TIMEOUT": (
+        RootCause(
+            "RC_NOC_QOS_STARVATION",
+            "A low-priority initiator is starved of QoS credits",
+            ("qos credit starvation", "credits=0"),
+            (
+                "Rebalance QoS weights / credits for the starved initiator",
+                "Enable age-based arbitration on the congested link",
+            ),
+        ),
+        RootCause(
+            "RC_NOC_DEADLOCK",
+            "Dependency cycle across fabric routes causes a deadlock",
+            ("dependency cycle suspected", "cycle"),
+            (
+                "Inspect the route table for cyclic dependencies",
+                "Enable deadlock-recovery timeouts on the affected ring",
+            ),
+        ),
+        RootCause(
+            "RC_DMA_BURST_OVERFLOW",
+            "DMA burst length overflows the fabric buffers",
+            ("dma burst overflow", "burst_len"),
+            (
+                "Reduce the DMA burst length or add outstanding-transaction limits",
+                "Verify buffer depth on the DMA->DDR path",
+            ),
+        ),
+    ),
+}
+
+
 def prior_for(failure_type: str) -> RootCausePrior:
     return KNOWLEDGE.get(failure_type, KNOWLEDGE["UNKNOWN_FAILURE"])
+
+
+def candidates_for(failure_type: str) -> tuple[RootCause, ...]:
+    """Specific root-cause candidates for a failure type (empty if unknown)."""
+    return ROOT_CAUSES.get(failure_type, ())
+
+
+def root_cause_by_id(rc_id: str) -> RootCause | None:
+    for causes in ROOT_CAUSES.values():
+        for rc in causes:
+            if rc.rc_id == rc_id:
+                return rc
+    return None
