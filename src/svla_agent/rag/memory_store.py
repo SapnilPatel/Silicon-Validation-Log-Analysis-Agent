@@ -96,7 +96,7 @@ class InMemoryVectorStore(BaseVectorStore):
                 self._ids.append(f.failure_id)
                 self._meta.append(meta)
                 self._docs.append(f.signature)
-                new_rows.append(v)
+                new_rows.append(np.asarray(v, dtype=np.float32))
         if new_rows:
             block = np.vstack(new_rows)
             self._vecs = block if self._vecs is None else np.vstack([self._vecs, block])
