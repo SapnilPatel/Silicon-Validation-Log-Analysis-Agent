@@ -1,9 +1,14 @@
 """Unsupervised clustering of failures into recurring families.
 
 Failures are embedded by their normalised signature and grouped with HDBSCAN
-(``sklearn.cluster.HDBSCAN``). HDBSCAN labels low-density points as noise
-(``-1``); rather than discard them, we fold each noise point into a per-type
-fallback family so every failure ends up in exactly one cluster.
+(``sklearn.cluster.HDBSCAN``). Clustering runs *within* each classified failure
+type: the type is a hard, explainable boundary (an engineer never wants a PCIe
+and a thermal failure in one family), and HDBSCAN's job is to discover the
+sub-families inside a type - typically the different root causes.
+
+HDBSCAN labels low-density points as noise (``-1``); rather than discard them,
+noise points of a type are folded into one fallback family so every failure
+ends up in exactly one cluster.
 """
 
 from __future__ import annotations
@@ -28,13 +33,12 @@ def _exemplar_label(failure_types: list[str]) -> str:
     return Counter(failure_types).most_common(1)[0][0]
 
 
-def _assign_labels(embeddings: np.ndarray, failures: list[Failure]) -> np.ndarray:
-    """Run HDBSCAN, then deterministically relabel noise into fallback families."""
+def _hdbscan_labels(embeddings: np.ndarray) -> np.ndarray:
+    """HDBSCAN on one type's embeddings; noise folded into one extra label."""
     settings = get_settings()
-    n = len(failures)
+    n = len(embeddings)
     if n < 2:
         return np.zeros(n, dtype=int)
-
     min_size = max(2, min(settings.cluster_min_size, n))
     clusterer = HDBSCAN(
         min_cluster_size=min_size,
@@ -43,20 +47,25 @@ def _assign_labels(embeddings: np.ndarray, failures: list[Failure]) -> np.ndarra
         copy=True,
     )
     labels = clusterer.fit_predict(embeddings).astype(int)
-
-    # Fold noise (-1) into stable per-failure-type fallback clusters so nothing
-    # is silently dropped. Fallback ids are offset above any real cluster id.
-    next_id = int(labels.max()) + 1 if labels.max() >= 0 else 0
-    type_to_fallback: dict[str, int] = {}
-    for i, label in enumerate(labels):
-        if label != -1:
-            continue
-        ftype = failures[i].failure_type
-        if ftype not in type_to_fallback:
-            type_to_fallback[ftype] = next_id
-            next_id += 1
-        labels[i] = type_to_fallback[ftype]
+    if (labels == -1).any():
+        labels[labels == -1] = int(labels.max()) + 1 if labels.max() >= 0 else 0
     return labels
+
+
+def _assign_labels(embeddings: np.ndarray, failures: list[Failure]) -> np.ndarray:
+    """Cluster within each failure type; return globally unique cluster ids."""
+    out = np.zeros(len(failures), dtype=int)
+    next_id = 0
+    by_type: dict[str, list[int]] = {}
+    for i, f in enumerate(failures):
+        by_type.setdefault(f.failure_type, []).append(i)
+    for ftype in sorted(by_type):
+        idx = by_type[ftype]
+        local = _hdbscan_labels(embeddings[idx])
+        for i, lab in zip(idx, local, strict=True):
+            out[i] = next_id + int(lab)
+        next_id += int(local.max()) + 1 if len(local) else 1
+    return out
 
 
 def cluster_failures(
@@ -78,7 +87,7 @@ def cluster_failures(
     clusters: list[FailureCluster] = []
     for cid, members in sorted(groups.items()):
         ftypes = [m.failure_type for m in members]
-        exemplar = max(members, key=lambda m: (m.first_ts_ms, len(m.evidence)))
+        exemplar = max(members, key=lambda m: (m.occurrences, -m.first_ts_ms, len(m.evidence)))
         clusters.append(
             FailureCluster(
                 cluster_id=cid,

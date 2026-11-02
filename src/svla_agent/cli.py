@@ -111,6 +111,10 @@ def evaluate_cmd(
     logs: Path | None = typer.Option(None, help="Logs directory."),
     labels: Path | None = typer.Option(None, help="Labels directory."),
     limit: int | None = typer.Option(None, help="Evaluate only the first N runs."),
+    holdout: float | None = typer.Option(
+        None,
+        help="Fraction of runs held out for retrieval/root-cause eval (default from settings).",
+    ),
     out: Path | None = typer.Option(None, help="Write metrics JSON to this path."),
 ) -> None:
     """Evaluate pipeline output against ground-truth labels."""
@@ -126,19 +130,41 @@ def evaluate_cmd(
     result = pipeline.run(
         logs_dir=str(logs) if logs else None,
         labels_dir=labels_dir,
-        index=True,
+        index=False,
         write=False,
         hypotheses=False,
         limit=limit,
         progress=_progress,
     )
     metrics = evaluate(
-        result, load_labels(labels_dir), embedder=pipeline.embedder, store=pipeline.store
+        result,
+        load_labels(labels_dir),
+        embedder=pipeline.embedder,
+        store=pipeline.store,
+        agent=pipeline.agent,
+        holdout=settings.eval_holdout if holdout is None else holdout,
+        k=settings.rag_top_k,
     )
     _print_metrics(metrics)
     if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(metrics, indent=2))
         console.print(f"[green]Wrote[/green] metrics to {out}")
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("0.0.0.0", help="Bind address."),
+    port: int = typer.Option(8000, help="Port."),
+    reload: bool = typer.Option(False, "--reload", help="Auto-reload (development)."),
+) -> None:
+    """Serve the REST API (FastAPI + uvicorn)."""
+    _init()
+    try:
+        import uvicorn
+    except ImportError as exc:  # pragma: no cover - optional extra
+        raise typer.BadParameter("Install the API extra: pip install 'svla-agent[api]'") from exc
+    uvicorn.run("svla_agent.api:app", host=host, port=port, reload=reload)
 
 
 # --------------------------------------------------------------------------- #
@@ -186,10 +212,22 @@ def _print_metrics(metrics: dict) -> None:
     cl = metrics["clustering"]
     console.print("[bold]Clustering[/bold]")
     console.print("  " + "  ".join(f"{k}={v}" for k, v in cl.items()))
+    ho = metrics.get("holdout", {})
+    if ho.get("test_runs"):
+        console.print(
+            f"[bold]Hold-out[/bold] ({ho['train_runs']} train runs / {ho['test_runs']} test runs, "
+            f"{ho['test_failures']} test failures)"
+        )
     if "retrieval" in metrics:
         rt = metrics["retrieval"]
         console.print("[bold]Retrieval[/bold]")
         console.print("  " + "  ".join(f"{k}={v}" for k, v in rt.items()))
+    if "root_cause" in metrics:
+        rc = metrics["root_cause"]
+        console.print("[bold]Root cause (top-1)[/bold]")
+        console.print("  " + "  ".join(f"{k}={v}" for k, v in rc.items() if k != "per_type"))
+        for t, v in rc.get("per_type", {}).items():
+            console.print(f"    {t}: {v['correct']}/{v['total']} ({v['accuracy']})", style="dim")
 
 
 if __name__ == "__main__":
