@@ -152,6 +152,7 @@ agent, no API key:
 | Anomaly detection P / R / F1 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
 | Failure typing (micro) P / R / F1 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
 | Cluster purity vs. failure type | 1.00 | 1.00 |
+| Cluster homogeneity vs. root cause | 0.91 | 0.91 |
 | Retrieval recall@5 (same type) / MRR | 1.00 / 1.00 | 1.00 / 1.00 |
 | Retrieval recall@5 (same root cause) | 0.98 | 0.92 |
 | **Root-cause top-1 accuracy** | **0.96** | **0.92** |
@@ -224,7 +225,7 @@ make check           # ruff + format check + mypy + pytest (offline)
 make test            # pytest only
 ```
 
-The test suite (44 tests) runs fully offline and deterministically against a
+The test suite (45 tests) runs fully offline and deterministically against a
 small generated dataset, including the REST API and headless dashboard tests.
 CI (GitHub Actions) lints, type-checks and tests on Python 3.10–3.12, smokes the
 bundled sample dataset end to end and builds the Docker image. See
