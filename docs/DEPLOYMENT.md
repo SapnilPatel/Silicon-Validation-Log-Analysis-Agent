@@ -49,8 +49,28 @@ curl -H "X-Anthropic-Key: sk-ant-..." -X POST localhost:8000/analyze/000003   # 
 
 Interactive docs: `/docs` (Swagger) and `/redoc`.
 
-## Streamlit Community Cloud (alternative)
+## Streamlit Community Cloud (free, recommended for the public demo)
 
-Point share.streamlit.io at this repo with main file `app/streamlit_app.py` and
-add `SVLA_VECTOR_BACKEND=memory` plus `SVLA_OFFLINE=1` as secrets if the 1 GB
-tier cannot load the embedding model.
+1. Sign in at https://share.streamlit.io with the GitHub account that owns the repo.
+2. **Create app** → *Deploy a public app from GitHub*:
+   - Repository: `SapnilPatel/Silicon-Validation-Log-Analysis-Agent`
+   - Branch: `main`
+   - Main file path: `app/streamlit_app.py`
+   - App URL (subdomain): `svla-agent` (or any free name)
+3. **Advanced settings**:
+   - Python version: `3.12`
+   - Secrets (they are exported as environment variables):
+
+     ```toml
+     SVLA_VECTOR_BACKEND = "memory"
+     SVLA_LOG_LEVEL = "INFO"
+     ```
+
+     Optional: `SVLA_OFFLINE = "1"` forces the lightweight hashing embeddings if the
+     sentence-transformers model does not fit the instance; the app falls back to
+     them automatically if the model cannot load.
+4. **Deploy**. The first build installs `requirements.txt` (a few minutes); the app
+   then serves the bundled `examples/` dataset, reports and 400-run metrics, with
+   live analysis and per-visitor Claude keys working as in the local app.
+
+Every push to `main` redeploys automatically.

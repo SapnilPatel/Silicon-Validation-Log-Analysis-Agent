@@ -14,7 +14,8 @@ and names a specific, evidence-backed root cause with remediation steps — as
 Markdown/JSON debug reports, a REST API and an interactive dashboard.
 
 > **Try it:** `pip install -e ".[app]" && streamlit run app/streamlit_app.py` runs on the bundled sample
-> dataset; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for hosting it (Docker, Hugging Face, Streamlit Cloud).
+> dataset. Hosting (Streamlit Community Cloud in four clicks, Docker, Hugging Face PRO) is in
+> [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 >
 > The whole pipeline runs **offline** out of the box (deterministic fallbacks for
 > embeddings, retrieval and hypotheses). Add an `ANTHROPIC_API_KEY` — or paste one
