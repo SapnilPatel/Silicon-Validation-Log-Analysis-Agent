@@ -1,0 +1,35 @@
+{
+  "run_id": "000003",
+  "anomalous": true,
+  "failure_types": [
+    "NOC_TIMEOUT"
+  ],
+  "root_cause_id": "RC_NOC_QOS_STARVATION",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_NOC_TXN_TIMEOUT",
+      "failure_type": "NOC_TIMEOUT",
+      "root_cause_id": "RC_NOC_QOS_STARVATION",
+      "start_ts_ms": 3068,
+      "end_ts_ms": 3995,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000003",
+    "soc": "AURORA-X1",
+    "stepping": "B0",
+    "board": "EVT-1",
+    "fw_version": "1.0.3",
+    "test_suite": "bringup",
+    "test_case": "pcie_link_train_stress",
+    "seed": 90213,
+    "voltage_mv": 820,
+    "temp_c": 75,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 4,
+    "workload": "idle"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "run_id": "000016",
+  "anomalous": true,
+  "failure_types": [
+    "DDR_ECC"
+  ],
+  "root_cause_id": "RC_DDR_CDC_GLITCH",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_DDR_ECC_UE",
+      "failure_type": "DDR_ECC",
+      "root_cause_id": "RC_DDR_CDC_GLITCH",
+      "start_ts_ms": 15254,
+      "end_ts_ms": 15832,
+      "severity": "high"
+    },
+    {
+      "pattern_id": "P_DDR_ECC_UE",
+      "failure_type": "DDR_ECC",
+      "root_cause_id": "RC_DDR_TIMING_VIOLATION",
+      "start_ts_ms": 11408,
+      "end_ts_ms": 11974,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000016",
+    "soc": "ORION-S2",
+    "stepping": "A0",
+    "board": "EVT-2",
+    "fw_version": "0.9.21",
+    "test_suite": "bringup",
+    "test_case": "thermal_soak",
+    "seed": 90226,
+    "voltage_mv": 800,
+    "temp_c": 75,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 8,
+    "workload": "idle"
+  }
+}

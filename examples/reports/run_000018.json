@@ -1,0 +1,135 @@
+{
+  "run_id": "000018",
+  "meta": {
+    "run_id": "000018",
+    "soc": "NEBULA-A0",
+    "stepping": "A1",
+    "board": "DVT-1",
+    "fw_version": "1.0.3",
+    "test_suite": "psv_stress",
+    "test_case": "pcie_link_train_stress",
+    "voltage_mv": 820,
+    "temp_c": 95,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 8,
+    "workload": "io_stress",
+    "extra": {
+      "seed": "90228"
+    }
+  },
+  "anomalous": true,
+  "n_events": 2194,
+  "failures": [
+    {
+      "failure_id": "000018:THERMAL_TRIP",
+      "run_id": "000018",
+      "failure_type": "THERMAL_TRIP",
+      "severity": "high",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 831,
+      "last_ts_ms": 844,
+      "summary": "THERMAL_TRIP in SYSTEM/THERMAL: Emergency shutdown",
+      "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down",
+      "evidence": [
+        "[00:00:00.256] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS",
+        "[00:00:00.291] THERMAL: WARN: Sensor-to-ambient delta high | delta_c=71 ambient_c=95",
+        "[00:00:00.461] FW: WARN: DVFS step-down | clk_mhz=800 next_clk_mhz=600",
+        "[00:00:00.831] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=115 threshold_c=105",
+        "[00:00:00.844] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP"
+      ],
+      "kv": {
+        "reason": "THERMAL_TRIP"
+      },
+      "cluster_id": 5,
+      "fingerprint": "df1c7ae8a4aa",
+      "occurrences": 1
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 5,
+      "label": "THERMAL_TRIP",
+      "size": 4,
+      "failure_ids": [
+        "000001:THERMAL_TRIP",
+        "000015:THERMAL_TRIP",
+        "000018:THERMAL_TRIP",
+        "000020:THERMAL_TRIP"
+      ],
+      "failure_types": [
+        "THERMAL_TRIP"
+      ],
+      "exemplar_failure_id": "000018:THERMAL_TRIP",
+      "representative_signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down"
+    }
+  ],
+  "hypotheses": [
+    {
+      "failure_id": "000018:THERMAL_TRIP",
+      "cluster_id": 5,
+      "root_cause": "Junction temperature exceeded the thermal trip threshold: Poor heatsink/TIM contact — large die-to-ambient delta",
+      "root_cause_id": "RC_HEATSINK_POOR",
+      "confidence": 0.83,
+      "rationale": "Temperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload. Evidence contains the tell-tale(s) 'sensor-to-ambient delta high', 'delta_c' for RC_HEATSINK_POOR.",
+      "recommended_actions": [
+        "Re-seat the heatsink and replace the TIM",
+        "Measure mounting pressure against the thermal spec",
+        "Inspect heatsink mounting/TIM and airflow on the DUT",
+        "Make the fan/DVFS profile more aggressive ahead of the trip point"
+      ],
+      "supporting_evidence": [
+        "[00:00:00.256] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS",
+        "[00:00:00.291] THERMAL: WARN: Sensor-to-ambient delta high | delta_c=71 ambient_c=95",
+        "[00:00:00.461] FW: WARN: DVFS step-down | clk_mhz=800 next_clk_mhz=600",
+        "[00:00:00.831] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=115 threshold_c=105",
+        "[00:00:00.844] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000015:THERMAL_TRIP",
+          "run_id": "000015",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.12242364883422852
+        },
+        {
+          "failure_id": "000020:THERMAL_TRIP",
+          "run_id": "000020",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.14632952213287354
+        },
+        {
+          "failure_id": "000001:THERMAL_TRIP",
+          "run_id": "000001",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_FAN_PROFILE_BAD",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down",
+          "distance": 0.21363669633865356
+        },
+        {
+          "failure_id": "000023:PMU_DROOP",
+          "run_id": "000023",
+          "failure_type": "PMU_DROOP",
+          "root_cause_id": "RC_REGULATOR_LIMIT",
+          "signature": "PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event",
+          "distance": 0.6107786893844604
+        },
+        {
+          "failure_id": "000001:PCIE_TIMEOUT",
+          "run_id": "000001",
+          "failure_type": "PCIE_TIMEOUT",
+          "root_cause_id": "RC_PCIE_REFCLK_GATING",
+          "signature": "PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down ; PCIE: AER: Corrected error ; FW: Retrying PCIe init",
+          "distance": 0.6517153978347778
+        }
+      ],
+      "source": "rule-based"
+    }
+  ],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}

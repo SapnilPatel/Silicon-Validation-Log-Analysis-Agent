@@ -1,0 +1,24 @@
+{
+  "run_id": "000019",
+  "anomalous": false,
+  "failure_types": [],
+  "root_cause_id": null,
+  "injected_patterns": [],
+  "meta": {
+    "run_id": "000019",
+    "soc": "ORION-S2",
+    "stepping": "A1",
+    "board": "EVT-2",
+    "fw_version": "0.9.14",
+    "test_suite": "psv_stress",
+    "test_case": "thermal_soak",
+    "seed": 90229,
+    "voltage_mv": 900,
+    "temp_c": 25,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 2400,
+    "pcie_gen": 3,
+    "pcie_lanes": 8,
+    "workload": "io_stress"
+  }
+}

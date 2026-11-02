@@ -1,0 +1,28 @@
+{
+  "run_id": "000006",
+  "meta": {
+    "run_id": "000006",
+    "soc": "AURORA-X1",
+    "stepping": "B0",
+    "board": "DVT-1",
+    "fw_version": "1.0.3",
+    "test_suite": "io_validation",
+    "test_case": "mixed_io",
+    "voltage_mv": 820,
+    "temp_c": 95,
+    "clk_mhz": 1000,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 16,
+    "workload": "idle",
+    "extra": {
+      "seed": "90216"
+    }
+  },
+  "anomalous": false,
+  "n_events": 3155,
+  "failures": [],
+  "clusters": [],
+  "hypotheses": [],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}

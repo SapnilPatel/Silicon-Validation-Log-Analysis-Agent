@@ -1,0 +1,35 @@
+{
+  "run_id": "000018",
+  "anomalous": true,
+  "failure_types": [
+    "THERMAL_TRIP"
+  ],
+  "root_cause_id": "RC_HEATSINK_POOR",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_THERMAL_TRIP",
+      "failure_type": "THERMAL_TRIP",
+      "root_cause_id": "RC_HEATSINK_POOR",
+      "start_ts_ms": 93,
+      "end_ts_ms": 844,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000018",
+    "soc": "NEBULA-A0",
+    "stepping": "A1",
+    "board": "DVT-1",
+    "fw_version": "1.0.3",
+    "test_suite": "psv_stress",
+    "test_case": "pcie_link_train_stress",
+    "seed": 90228,
+    "voltage_mv": 820,
+    "temp_c": 95,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 8,
+    "workload": "io_stress"
+  }
+}

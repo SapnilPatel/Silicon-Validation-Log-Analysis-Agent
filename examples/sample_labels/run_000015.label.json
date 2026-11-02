@@ -1,0 +1,35 @@
+{
+  "run_id": "000015",
+  "anomalous": true,
+  "failure_types": [
+    "THERMAL_TRIP"
+  ],
+  "root_cause_id": "RC_WORKLOAD_BURST",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_THERMAL_TRIP",
+      "failure_type": "THERMAL_TRIP",
+      "root_cause_id": "RC_WORKLOAD_BURST",
+      "start_ts_ms": 1265,
+      "end_ts_ms": 2010,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000015",
+    "soc": "AURORA-X1",
+    "stepping": "A1",
+    "board": "DVT-1",
+    "fw_version": "0.9.21",
+    "test_suite": "psv_stress",
+    "test_case": "thermal_soak",
+    "seed": 90225,
+    "voltage_mv": 850,
+    "temp_c": 95,
+    "clk_mhz": 1200,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 4,
+    "workload": "io_stress"
+  }
+}

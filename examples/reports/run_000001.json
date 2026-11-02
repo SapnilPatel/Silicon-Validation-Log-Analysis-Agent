@@ -1,0 +1,256 @@
+{
+  "run_id": "000001",
+  "meta": {
+    "run_id": "000001",
+    "soc": "AURORA-X1",
+    "stepping": "A0",
+    "board": "EVT-2",
+    "fw_version": "0.9.21",
+    "test_suite": "psv_stress",
+    "test_case": "fw_fuzz_boot",
+    "voltage_mv": 900,
+    "temp_c": 25,
+    "clk_mhz": 1200,
+    "dram_freq_mhz": 2400,
+    "pcie_gen": 3,
+    "pcie_lanes": 8,
+    "workload": "mixed",
+    "extra": {
+      "seed": "90211"
+    }
+  },
+  "anomalous": true,
+  "n_events": 2982,
+  "failures": [
+    {
+      "failure_id": "000001:PCIE_TIMEOUT",
+      "run_id": "000001",
+      "failure_type": "PCIE_TIMEOUT",
+      "severity": "critical",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 12635,
+      "last_ts_ms": 14570,
+      "summary": "PCIE_TIMEOUT in PCIE/SYSTEM: PCIe initialization failed",
+      "signature": "PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down ; PCIE: AER: Corrected error ; FW: Retrying PCIe init",
+      "evidence": [
+        "[00:00:11.033] PCIE: WARN: Refclk instability detected | ppm=587 pll_lock=0",
+        "[00:00:11.305] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail",
+        "[00:00:11.506] THERMAL: WARN: Temperature high | t_c=90 policy=DVFS",
+        "[00:00:11.543] THERMAL: WARN: Fan speed below profile | rpm=1233 target_rpm=4057",
+        "[00:00:11.813] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000",
+        "[00:00:12.388] PCIE: WARN: AER: Corrected error | lane=0 code=ReplayTimerTimeout",
+        "[00:00:12.637] FW: WARN: Retrying PCIe init | attempt=1/3 lane=0",
+        "[00:00:12.635] PCIE: ERROR: Link training timeout | lane=0 ltssm=Polling rc=-110",
+        "[00:00:13.944] PCIE: ERROR: Link training timeout | lane=0 ltssm=Recovery rc=-110",
+        "[00:00:14.538] PCIE: ERROR: PCIe controller register snapshot | lane=0",
+        "    REG_DUMP_BEGIN ...",
+        "[00:00:14.570] SYSTEM: FATAL: PCIe initialization failed | lane=0 gen=3 lanes=x8"
+      ],
+      "kv": {
+        "lane": "0",
+        "gen": "3",
+        "lanes": "x8"
+      },
+      "cluster_id": 3,
+      "fingerprint": "a32230a2023b",
+      "occurrences": 1
+    },
+    {
+      "failure_id": "000001:THERMAL_TRIP",
+      "run_id": "000001",
+      "failure_type": "THERMAL_TRIP",
+      "severity": "high",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 12060,
+      "last_ts_ms": 12067,
+      "summary": "THERMAL_TRIP in SYSTEM/THERMAL: Emergency shutdown",
+      "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down",
+      "evidence": [
+        "[00:00:11.033] PCIE: WARN: Refclk instability detected | ppm=587 pll_lock=0",
+        "[00:00:11.305] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail",
+        "[00:00:11.506] THERMAL: WARN: Temperature high | t_c=90 policy=DVFS",
+        "[00:00:11.543] THERMAL: WARN: Fan speed below profile | rpm=1233 target_rpm=4057",
+        "[00:00:11.813] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000",
+        "[00:00:12.060] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=116 threshold_c=105",
+        "[00:00:12.067] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP"
+      ],
+      "kv": {
+        "reason": "THERMAL_TRIP"
+      },
+      "cluster_id": 5,
+      "fingerprint": "2a730cc4be91",
+      "occurrences": 1
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 3,
+      "label": "PCIE_TIMEOUT",
+      "size": 1,
+      "failure_ids": [
+        "000001:PCIE_TIMEOUT"
+      ],
+      "failure_types": [
+        "PCIE_TIMEOUT"
+      ],
+      "exemplar_failure_id": "000001:PCIE_TIMEOUT",
+      "representative_signature": "PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down ; PCIE: AER: Corrected error ; FW: Retrying PCIe init"
+    },
+    {
+      "cluster_id": 5,
+      "label": "THERMAL_TRIP",
+      "size": 4,
+      "failure_ids": [
+        "000001:THERMAL_TRIP",
+        "000015:THERMAL_TRIP",
+        "000018:THERMAL_TRIP",
+        "000020:THERMAL_TRIP"
+      ],
+      "failure_types": [
+        "THERMAL_TRIP"
+      ],
+      "exemplar_failure_id": "000018:THERMAL_TRIP",
+      "representative_signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down"
+    }
+  ],
+  "hypotheses": [
+    {
+      "failure_id": "000001:PCIE_TIMEOUT",
+      "cluster_id": 3,
+      "root_cause": "PCIe link training failed to reach L0 (LTSSM stuck in Polling/Recovery): Reference clock instability / gating during link training",
+      "root_cause_id": "RC_PCIE_REFCLK_GATING",
+      "confidence": 0.83,
+      "rationale": "Repeated LTSSM Recovery transitions with AER corrected errors followed by 'Link training timeout' point to physical-layer signal-integrity or refclk issues rather than software configuration. Evidence contains the tell-tale(s) 'refclk instability', 'refclk' for RC_PCIE_REFCLK_GATING.",
+      "recommended_actions": [
+        "Scope the refclk at the connector and SoC ball for gating/jitter",
+        "Disable spread-spectrum clocking and retest link training",
+        "Check refclk routing/spread-spectrum and PLL lock on the failing lane",
+        "Review SI margins and equalization (EQ) preset tuning for the negotiated gen"
+      ],
+      "supporting_evidence": [
+        "[00:00:11.033] PCIE: WARN: Refclk instability detected | ppm=587 pll_lock=0",
+        "[00:00:11.305] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail",
+        "[00:00:11.506] THERMAL: WARN: Temperature high | t_c=90 policy=DVFS",
+        "[00:00:11.543] THERMAL: WARN: Fan speed below profile | rpm=1233 target_rpm=4057",
+        "[00:00:11.813] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000",
+        "[00:00:12.388] PCIE: WARN: AER: Corrected error | lane=0 code=ReplayTimerTimeout",
+        "[00:00:12.637] FW: WARN: Retrying PCIe init | attempt=1/3 lane=0",
+        "[00:00:12.635] PCIE: ERROR: Link training timeout | lane=0 ltssm=Polling rc=-110",
+        "[00:00:13.944] PCIE: ERROR: Link training timeout | lane=0 ltssm=Recovery rc=-110",
+        "[00:00:14.538] PCIE: ERROR: PCIe controller register snapshot | lane=0",
+        "    REG_DUMP_BEGIN ...",
+        "[00:00:14.570] SYSTEM: FATAL: PCIe initialization failed | lane=0 gen=3 lanes=x8"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000001:THERMAL_TRIP",
+          "run_id": "000001",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_FAN_PROFILE_BAD",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down",
+          "distance": 0.24297451972961426
+        },
+        {
+          "failure_id": "000020:THERMAL_TRIP",
+          "run_id": "000020",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.532825767993927
+        },
+        {
+          "failure_id": "000015:THERMAL_TRIP",
+          "run_id": "000015",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.5543045997619629
+        },
+        {
+          "failure_id": "000000:DDR_ECC",
+          "run_id": "000000",
+          "failure_type": "DDR_ECC",
+          "root_cause_id": "RC_DDR_CDC_GLITCH",
+          "signature": "DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: CDC synchronizer glitch ; DDR: Read retry invoked",
+          "distance": 0.6421043872833252
+        },
+        {
+          "failure_id": "000003:NOC_TIMEOUT",
+          "run_id": "000003",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_NOC_QOS_STARVATION",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: QoS credit starvation",
+          "distance": 0.6492849588394165
+        }
+      ],
+      "source": "rule-based"
+    },
+    {
+      "failure_id": "000001:THERMAL_TRIP",
+      "cluster_id": 5,
+      "root_cause": "Junction temperature exceeded the thermal trip threshold: Fan speed stays below the profile target as temperature rises",
+      "root_cause_id": "RC_FAN_PROFILE_BAD",
+      "confidence": 0.83,
+      "rationale": "Temperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload. Evidence contains the tell-tale(s) 'fan speed below profile', 'target_rpm' for RC_FAN_PROFILE_BAD.",
+      "recommended_actions": [
+        "Fix the fan curve / PWM mapping in the thermal policy",
+        "Verify tachometer feedback and fan power",
+        "Inspect heatsink mounting/TIM and airflow on the DUT",
+        "Make the fan/DVFS profile more aggressive ahead of the trip point"
+      ],
+      "supporting_evidence": [
+        "[00:00:11.033] PCIE: WARN: Refclk instability detected | ppm=587 pll_lock=0",
+        "[00:00:11.305] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail",
+        "[00:00:11.506] THERMAL: WARN: Temperature high | t_c=90 policy=DVFS",
+        "[00:00:11.543] THERMAL: WARN: Fan speed below profile | rpm=1233 target_rpm=4057",
+        "[00:00:11.813] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000",
+        "[00:00:12.060] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=116 threshold_c=105",
+        "[00:00:12.067] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000015:THERMAL_TRIP",
+          "run_id": "000015",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.18211209774017334
+        },
+        {
+          "failure_id": "000020:THERMAL_TRIP",
+          "run_id": "000020",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.18799859285354614
+        },
+        {
+          "failure_id": "000018:THERMAL_TRIP",
+          "run_id": "000018",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_HEATSINK_POOR",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down",
+          "distance": 0.21363675594329834
+        },
+        {
+          "failure_id": "000001:PCIE_TIMEOUT",
+          "run_id": "000001",
+          "failure_type": "PCIE_TIMEOUT",
+          "root_cause_id": "RC_PCIE_REFCLK_GATING",
+          "signature": "PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down ; PCIE: AER: Corrected error ; FW: Retrying PCIe init",
+          "distance": 0.24297428131103516
+        },
+        {
+          "failure_id": "000023:PMU_DROOP",
+          "run_id": "000023",
+          "failure_type": "PMU_DROOP",
+          "root_cause_id": "RC_REGULATOR_LIMIT",
+          "signature": "PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event",
+          "distance": 0.5788917541503906
+        }
+      ],
+      "source": "rule-based"
+    }
+  ],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}

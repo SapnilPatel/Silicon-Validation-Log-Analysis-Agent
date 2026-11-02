@@ -1,0 +1,24 @@
+{
+  "run_id": "000004",
+  "anomalous": false,
+  "failure_types": [],
+  "root_cause_id": null,
+  "injected_patterns": [],
+  "meta": {
+    "run_id": "000004",
+    "soc": "NEBULA-A0",
+    "stepping": "B0",
+    "board": "EVT-2",
+    "fw_version": "0.9.14",
+    "test_suite": "psv_stress",
+    "test_case": "fw_fuzz_boot",
+    "seed": 90214,
+    "voltage_mv": 850,
+    "temp_c": 105,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 3600,
+    "pcie_gen": 3,
+    "pcie_lanes": 16,
+    "workload": "compute_burst"
+  }
+}

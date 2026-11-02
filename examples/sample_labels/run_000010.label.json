@@ -1,0 +1,35 @@
+{
+  "run_id": "000010",
+  "anomalous": true,
+  "failure_types": [
+    "NOC_TIMEOUT"
+  ],
+  "root_cause_id": "RC_DMA_BURST_OVERFLOW",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_NOC_TXN_TIMEOUT",
+      "failure_type": "NOC_TIMEOUT",
+      "root_cause_id": "RC_DMA_BURST_OVERFLOW",
+      "start_ts_ms": 2764,
+      "end_ts_ms": 3546,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000010",
+    "soc": "AURORA-X1",
+    "stepping": "A1",
+    "board": "EVT-2",
+    "fw_version": "1.0.3",
+    "test_suite": "psv_smoke",
+    "test_case": "ddr_memtest_long",
+    "seed": 90220,
+    "voltage_mv": 800,
+    "temp_c": 75,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 3600,
+    "pcie_gen": 3,
+    "pcie_lanes": 16,
+    "workload": "mixed"
+  }
+}

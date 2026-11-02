@@ -1,0 +1,245 @@
+{
+  "run_id": "000020",
+  "meta": {
+    "run_id": "000020",
+    "soc": "NEBULA-A0",
+    "stepping": "A0",
+    "board": "EVT-1",
+    "fw_version": "0.9.14",
+    "test_suite": "psv_stress",
+    "test_case": "noc_fabric_stress",
+    "voltage_mv": 950,
+    "temp_c": 95,
+    "clk_mhz": 1000,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 16,
+    "workload": "mixed",
+    "extra": {
+      "seed": "90230"
+    }
+  },
+  "anomalous": true,
+  "n_events": 3121,
+  "failures": [
+    {
+      "failure_id": "000020:FW_EXCEPTION",
+      "run_id": "000020",
+      "failure_type": "FW_EXCEPTION",
+      "severity": "high",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 1510,
+      "last_ts_ms": 1540,
+      "summary": "FW_EXCEPTION in FW/SYSTEM: Firmware crash",
+      "signature": "FW_EXCEPTION | FW: Unhandled exception ; SYSTEM: Firmware crash ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call",
+      "evidence": [
+        "[00:00:01.340] FW: WARN: Null pointer guard triggered | ptr=0x1024E865",
+        "[00:00:01.375] FW: WARN: Stack watermark exceeded | task=main_loop used_pct=100",
+        "[00:00:01.384] FW: WARN: Retrying service call | svc=noc_worker attempt=1/3",
+        "[00:00:01.510] FW: ERROR: Unhandled exception | vector=BusFault core=0",
+        "    EXC: HardFault ...",
+        "[00:00:01.540] SYSTEM: FATAL: Firmware crash | reason=FW_EXCEPTION fw_version=0.9.14"
+      ],
+      "kv": {
+        "reason": "FW_EXCEPTION",
+        "fw_version": "0.9.14"
+      },
+      "cluster_id": 1,
+      "fingerprint": "efcc14e4a954",
+      "occurrences": 1
+    },
+    {
+      "failure_id": "000020:THERMAL_TRIP",
+      "run_id": "000020",
+      "failure_type": "THERMAL_TRIP",
+      "severity": "high",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 3036,
+      "last_ts_ms": 3048,
+      "summary": "THERMAL_TRIP in SYSTEM/THERMAL: Emergency shutdown",
+      "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+      "evidence": [
+        "[00:00:01.340] FW: WARN: Null pointer guard triggered | ptr=0x1024E865",
+        "[00:00:01.375] FW: WARN: Stack watermark exceeded | task=main_loop used_pct=100",
+        "[00:00:01.384] FW: WARN: Retrying service call | svc=noc_worker attempt=1/3",
+        "[00:00:02.480] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS",
+        "[00:00:02.513] PMU: WARN: Power burst detected | p_w=39 dur_ms=846",
+        "[00:00:02.792] FW: WARN: DVFS step-down | clk_mhz=1000 next_clk_mhz=800",
+        "[00:00:03.036] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=117 threshold_c=105",
+        "[00:00:03.048] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP"
+      ],
+      "kv": {
+        "reason": "THERMAL_TRIP"
+      },
+      "cluster_id": 5,
+      "fingerprint": "8e84c4027d19",
+      "occurrences": 1
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 1,
+      "label": "FW_EXCEPTION",
+      "size": 1,
+      "failure_ids": [
+        "000020:FW_EXCEPTION"
+      ],
+      "failure_types": [
+        "FW_EXCEPTION"
+      ],
+      "exemplar_failure_id": "000020:FW_EXCEPTION",
+      "representative_signature": "FW_EXCEPTION | FW: Unhandled exception ; SYSTEM: Firmware crash ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call"
+    },
+    {
+      "cluster_id": 5,
+      "label": "THERMAL_TRIP",
+      "size": 4,
+      "failure_ids": [
+        "000001:THERMAL_TRIP",
+        "000015:THERMAL_TRIP",
+        "000018:THERMAL_TRIP",
+        "000020:THERMAL_TRIP"
+      ],
+      "failure_types": [
+        "THERMAL_TRIP"
+      ],
+      "exemplar_failure_id": "000018:THERMAL_TRIP",
+      "representative_signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down"
+    }
+  ],
+  "hypotheses": [
+    {
+      "failure_id": "000020:FW_EXCEPTION",
+      "cluster_id": 1,
+      "root_cause": "Firmware crashed on an unhandled CPU exception (fault handler): Task stack overflow corrupts the return frame",
+      "root_cause_id": "RC_FW_STACK_OVERFLOW",
+      "confidence": 0.83,
+      "rationale": "Null-pointer guard and service retries precede an unhandled HardFault/BusFault with a stack trace, indicating a firmware logic defect (race or bad deref) rather than a hardware fault. Evidence contains the tell-tale(s) 'stack watermark exceeded', 'used_pct' for RC_FW_STACK_OVERFLOW.",
+      "recommended_actions": [
+        "Increase the task stack or reduce frame size in the hot path",
+        "Enable stack-canary checks in the debug build",
+        "Symbolicate the captured backtrace and inspect the faulting frame",
+        "Audit the retried service path for races / null dereferences"
+      ],
+      "supporting_evidence": [
+        "[00:00:01.340] FW: WARN: Null pointer guard triggered | ptr=0x1024E865",
+        "[00:00:01.375] FW: WARN: Stack watermark exceeded | task=main_loop used_pct=100",
+        "[00:00:01.384] FW: WARN: Retrying service call | svc=noc_worker attempt=1/3",
+        "[00:00:01.510] FW: ERROR: Unhandled exception | vector=BusFault core=0",
+        "    EXC: HardFault ...",
+        "[00:00:01.540] SYSTEM: FATAL: Firmware crash | reason=FW_EXCEPTION fw_version=0.9.14"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000020:THERMAL_TRIP",
+          "run_id": "000020",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.46948468685150146
+        },
+        {
+          "failure_id": "000010:NOC_TIMEOUT",
+          "run_id": "000010",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_DMA_BURST_OVERFLOW",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow",
+          "distance": 0.5860326290130615
+        },
+        {
+          "failure_id": "000003:NOC_TIMEOUT",
+          "run_id": "000003",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_NOC_QOS_STARVATION",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: QoS credit starvation",
+          "distance": 0.5930546522140503
+        },
+        {
+          "failure_id": "000021:NOC_TIMEOUT",
+          "run_id": "000021",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_NOC_DEADLOCK",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Dependency cycle suspected ; NOC: Fabric <*>",
+          "distance": 0.611343264579773
+        },
+        {
+          "failure_id": "000000:DDR_ECC",
+          "run_id": "000000",
+          "failure_type": "DDR_ECC",
+          "root_cause_id": "RC_DDR_CDC_GLITCH",
+          "signature": "DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: CDC synchronizer glitch ; DDR: Read retry invoked",
+          "distance": 0.6429239511489868
+        }
+      ],
+      "source": "rule-based"
+    },
+    {
+      "failure_id": "000020:THERMAL_TRIP",
+      "cluster_id": 5,
+      "root_cause": "Junction temperature exceeded the thermal trip threshold: A sustained power burst outruns the cooling headroom",
+      "root_cause_id": "RC_WORKLOAD_BURST",
+      "confidence": 0.87,
+      "rationale": "Temperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload. Evidence contains the tell-tale(s) 'power burst detected', 'p_w=' for RC_WORKLOAD_BURST. 1 of 3 similar historical incidents (runs 000015) were resolved as RC_WORKLOAD_BURST.",
+      "recommended_actions": [
+        "Cap the burst power or lengthen the DVFS step-down reaction",
+        "Add thermal headroom to the test's power envelope",
+        "Inspect heatsink mounting/TIM and airflow on the DUT",
+        "Make the fan/DVFS profile more aggressive ahead of the trip point"
+      ],
+      "supporting_evidence": [
+        "[00:00:01.340] FW: WARN: Null pointer guard triggered | ptr=0x1024E865",
+        "[00:00:01.375] FW: WARN: Stack watermark exceeded | task=main_loop used_pct=100",
+        "[00:00:01.384] FW: WARN: Retrying service call | svc=noc_worker attempt=1/3",
+        "[00:00:02.480] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS",
+        "[00:00:02.513] PMU: WARN: Power burst detected | p_w=39 dur_ms=846",
+        "[00:00:02.792] FW: WARN: DVFS step-down | clk_mhz=1000 next_clk_mhz=800",
+        "[00:00:03.036] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=117 threshold_c=105",
+        "[00:00:03.048] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000015:THERMAL_TRIP",
+          "run_id": "000015",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.07257956266403198
+        },
+        {
+          "failure_id": "000018:THERMAL_TRIP",
+          "run_id": "000018",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_HEATSINK_POOR",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down",
+          "distance": 0.14632976055145264
+        },
+        {
+          "failure_id": "000001:THERMAL_TRIP",
+          "run_id": "000001",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_FAN_PROFILE_BAD",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down",
+          "distance": 0.18799859285354614
+        },
+        {
+          "failure_id": "000023:PMU_DROOP",
+          "run_id": "000023",
+          "failure_type": "PMU_DROOP",
+          "root_cause_id": "RC_REGULATOR_LIMIT",
+          "signature": "PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event",
+          "distance": 0.46185415983200073
+        },
+        {
+          "failure_id": "000020:FW_EXCEPTION",
+          "run_id": "000020",
+          "failure_type": "FW_EXCEPTION",
+          "root_cause_id": "RC_FW_STACK_OVERFLOW",
+          "signature": "FW_EXCEPTION | FW: Unhandled exception ; SYSTEM: Firmware crash ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call",
+          "distance": 0.46948474645614624
+        }
+      ],
+      "source": "rule-based"
+    }
+  ],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}
