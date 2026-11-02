@@ -18,6 +18,9 @@ def app_env(pipeline, dataset, tmp_path, monkeypatch):
     """Point the app at the offline test dataset; write reports for it to browse."""
     pipeline.run(index=True, write=True)
     monkeypatch.setenv("SVLA_OFFLINE", "1")
+    # The app defaults this itself; setting it via monkeypatch guarantees the
+    # process environment is restored afterwards so later tests are unaffected.
+    monkeypatch.setenv("SVLA_VECTOR_BACKEND", "memory")
     monkeypatch.setenv("SVLA_CHROMA_DIR", str(tmp_path / "app_chroma"))
     monkeypatch.setenv("SVLA_LOGS_DIR", str(dataset["logs"]))
     monkeypatch.setenv("SVLA_LABELS_DIR", str(dataset["labels"]))

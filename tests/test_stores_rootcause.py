@@ -220,3 +220,19 @@ def test_stores_are_namespaced_by_embedding_space(settings: Settings, embedder):
         InMemoryVectorStore(mem_settings, FakeWideEmbedder())._path
         != InMemoryVectorStore(mem_settings, embedder)._path
     )
+
+
+def test_make_store_falls_back_to_memory_when_chroma_breaks(
+    settings: Settings, embedder, monkeypatch
+):
+    import chromadb
+
+    def boom(*args, **kwargs):
+        raise AttributeError("rust bindings unavailable")
+
+    monkeypatch.setattr(chromadb, "PersistentClient", boom)
+    chroma_settings = settings.model_copy(update={"vector_backend": "chroma"})
+    store = make_store(chroma_settings, embedder)
+    assert isinstance(store, InMemoryVectorStore)
+    with pytest.raises(AttributeError):
+        make_store(chroma_settings, embedder, fallback=False)

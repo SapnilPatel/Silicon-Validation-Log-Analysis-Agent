@@ -68,7 +68,10 @@ Interactive docs: `/docs` (Swagger) and `/redoc`.
 
      Optional: `SVLA_OFFLINE = "1"` forces the lightweight hashing embeddings if the
      sentence-transformers model does not fit the instance; the app falls back to
-     them automatically if the model cannot load.
+     them automatically if the model cannot load. The dashboard defaults to the
+     in-memory vector store anyway, and falls back to it if Chroma's native
+     bindings are unavailable (they are not on Python 3.14), so the app also runs
+     if you forget the secrets or the Python version.
 4. **Deploy**. The first build installs `requirements.txt` (a few minutes); the app
    then serves the bundled `examples/` dataset, reports and 400-run metrics, with
    live analysis and per-visitor Claude keys working as in the local app.

@@ -9,6 +9,7 @@ Run with:  ``streamlit run app/streamlit_app.py``
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from collections import Counter
@@ -24,6 +25,24 @@ _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
 if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
+
+
+def _export_secrets_to_env() -> None:
+    """Hosted Streamlit keeps config in ``st.secrets``; our settings read the environment."""
+    try:
+        for key, value in st.secrets.items():
+            if (key.startswith("SVLA_") or key == "ANTHROPIC_API_KEY") and isinstance(
+                value, (str, int, float, bool)
+            ):
+                os.environ.setdefault(key, str(value))
+    except Exception:  # no secrets configured - perfectly normal locally
+        pass
+
+
+_export_secrets_to_env()
+# The dashboard favours the dependency-free in-memory store unless told otherwise:
+# Chroma's native bindings are not available on every hosting platform/Python.
+os.environ.setdefault("SVLA_VECTOR_BACKEND", "memory")
 
 from svla_agent import __version__  # noqa: E402
 from svla_agent.config import Settings, get_settings  # noqa: E402
@@ -349,9 +368,20 @@ def render_live(pipe: AnalysisPipeline, api_key: str | None) -> None:
         )
     )
     runs = discover_runs(pipe.settings.logs_dir)
-    if pipe.store.count() == 0:
-        with st.spinner("Building the historical-failure index from the logs directory…"):
-            pipe.index_corpus()
+
+    def _analyse(target) -> dict | None:
+        try:
+            if pipe.store.count() == 0:
+                with st.spinner("Building the historical-failure index from the logs directory…"):
+                    pipe.index_corpus()
+            with st.spinner("Analysing…"):
+                return (
+                    pipeline_with_key(pipe, api_key).process_run(target, write=False).model_dump()
+                )
+        except Exception as exc:  # surface instead of crashing the whole page
+            st.error(f"Analysis failed: {type(exc).__name__}: {exc}")
+            return None
+
     source = st.radio(
         "Input", ["Pick a run from the logs directory", "Upload log files"], horizontal=True
     )
@@ -362,8 +392,7 @@ def render_live(pipe: AnalysisPipeline, api_key: str | None) -> None:
             return
         rid = st.selectbox("Run", [r.run_id for r in runs])
         if st.button("Analyse run", type="primary"):
-            with st.spinner("Analysing…"):
-                report = pipeline_with_key(pipe, api_key).process_run(rid, write=False).model_dump()
+            report = _analyse(rid)
     else:
         files = st.file_uploader(
             "run_<id>.<source>.log or .log.gz",
@@ -378,12 +407,7 @@ def render_live(pipe: AnalysisPipeline, api_key: str | None) -> None:
             if not found:
                 st.error("No `run_<id>.<source>.log[.gz]` files recognised.")
             else:
-                with st.spinner("Analysing…"):
-                    report = (
-                        pipeline_with_key(pipe, api_key)
-                        .process_run(found[0], write=False)
-                        .model_dump()
-                    )
+                report = _analyse(found[0])
     if report:
         render_run(report)
 
