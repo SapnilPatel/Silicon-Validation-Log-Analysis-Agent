@@ -1,0 +1,35 @@
+{
+  "run_id": "000023",
+  "anomalous": true,
+  "failure_types": [
+    "PMU_DROOP"
+  ],
+  "root_cause_id": "RC_REGULATOR_LIMIT",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_PMU_DROOP_WDOG_RESET",
+      "failure_type": "PMU_DROOP",
+      "root_cause_id": "RC_REGULATOR_LIMIT",
+      "start_ts_ms": 4422,
+      "end_ts_ms": 8192,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000023",
+    "soc": "ORION-S2",
+    "stepping": "A1",
+    "board": "EVT-1",
+    "fw_version": "1.0.3",
+    "test_suite": "io_validation",
+    "test_case": "mixed_io",
+    "seed": 90233,
+    "voltage_mv": 850,
+    "temp_c": 55,
+    "clk_mhz": 1200,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 4,
+    "pcie_lanes": 8,
+    "workload": "io_stress"
+  }
+}

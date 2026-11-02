@@ -1,0 +1,44 @@
+{
+  "run_id": "000001",
+  "anomalous": true,
+  "failure_types": [
+    "PCIE_TIMEOUT",
+    "THERMAL_TRIP"
+  ],
+  "root_cause_id": "RC_FAN_PROFILE_BAD",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_THERMAL_TRIP",
+      "failure_type": "THERMAL_TRIP",
+      "root_cause_id": "RC_FAN_PROFILE_BAD",
+      "start_ts_ms": 11265,
+      "end_ts_ms": 12067,
+      "severity": "high"
+    },
+    {
+      "pattern_id": "P_PCIE_LTSSM_TIMEOUT",
+      "failure_type": "PCIE_TIMEOUT",
+      "root_cause_id": "RC_PCIE_REFCLK_GATING",
+      "start_ts_ms": 11000,
+      "end_ts_ms": 14570,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000001",
+    "soc": "AURORA-X1",
+    "stepping": "A0",
+    "board": "EVT-2",
+    "fw_version": "0.9.21",
+    "test_suite": "psv_stress",
+    "test_case": "fw_fuzz_boot",
+    "seed": 90211,
+    "voltage_mv": 900,
+    "temp_c": 25,
+    "clk_mhz": 1200,
+    "dram_freq_mhz": 2400,
+    "pcie_gen": 3,
+    "pcie_lanes": 8,
+    "workload": "mixed"
+  }
+}

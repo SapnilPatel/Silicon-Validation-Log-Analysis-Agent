@@ -1,0 +1,136 @@
+{
+  "run_id": "000010",
+  "meta": {
+    "run_id": "000010",
+    "soc": "AURORA-X1",
+    "stepping": "A1",
+    "board": "EVT-2",
+    "fw_version": "1.0.3",
+    "test_suite": "psv_smoke",
+    "test_case": "ddr_memtest_long",
+    "voltage_mv": 800,
+    "temp_c": 75,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 3600,
+    "pcie_gen": 3,
+    "pcie_lanes": 16,
+    "workload": "mixed",
+    "extra": {
+      "seed": "90220"
+    }
+  },
+  "anomalous": true,
+  "n_events": 1587,
+  "failures": [
+    {
+      "failure_id": "000010:NOC_TIMEOUT",
+      "run_id": "000010",
+      "failure_type": "NOC_TIMEOUT",
+      "severity": "critical",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 3444,
+      "last_ts_ms": 3546,
+      "summary": "NOC_TIMEOUT in NOC/SYSTEM: Interconnect failure",
+      "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow",
+      "evidence": [
+        "[00:00:02.850] NOC: WARN: Fabric congestion | txn_q=high stall_pct=25 region=CPU<->DDR",
+        "[00:00:02.882] NOC: WARN: DMA burst overflow | channel=2 burst_len=256",
+        "[00:00:03.444] NOC: ERROR: Transaction timeout | txn_id=0xB691 src=PCIE dst=DDR rc=-62",
+        "[00:00:03.516] NOC: ERROR: NoC error register snapshot | fabric=NOC0",
+        "    REG_DUMP_BEGIN ...",
+        "[00:00:03.546] SYSTEM: FATAL: Interconnect failure | reason=NOC_TIMEOUT"
+      ],
+      "kv": {
+        "reason": "NOC_TIMEOUT"
+      },
+      "cluster_id": 2,
+      "fingerprint": "e53e2eaadf9f",
+      "occurrences": 1
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 2,
+      "label": "NOC_TIMEOUT",
+      "size": 3,
+      "failure_ids": [
+        "000003:NOC_TIMEOUT",
+        "000010:NOC_TIMEOUT",
+        "000021:NOC_TIMEOUT"
+      ],
+      "failure_types": [
+        "NOC_TIMEOUT"
+      ],
+      "exemplar_failure_id": "000010:NOC_TIMEOUT",
+      "representative_signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow"
+    }
+  ],
+  "hypotheses": [
+    {
+      "failure_id": "000010:NOC_TIMEOUT",
+      "cluster_id": 2,
+      "root_cause": "Interconnect transaction timed out under fabric congestion: DMA burst length overflows the fabric buffers",
+      "root_cause_id": "RC_DMA_BURST_OVERFLOW",
+      "confidence": 0.83,
+      "rationale": "Sustained high transaction-queue occupancy and stalls precede a transaction timeout and interconnect failure, suggesting QoS starvation or a potential deadlock on a congested route. Evidence contains the tell-tale(s) 'dma burst overflow', 'burst_len' for RC_DMA_BURST_OVERFLOW.",
+      "recommended_actions": [
+        "Reduce the DMA burst length or add outstanding-transaction limits",
+        "Verify buffer depth on the DMA->DDR path",
+        "Review NoC QoS/arbitration weights for the starved initiator",
+        "Check for dependency cycles / deadlock on the congested route"
+      ],
+      "supporting_evidence": [
+        "[00:00:02.850] NOC: WARN: Fabric congestion | txn_q=high stall_pct=25 region=CPU<->DDR",
+        "[00:00:02.882] NOC: WARN: DMA burst overflow | channel=2 burst_len=256",
+        "[00:00:03.444] NOC: ERROR: Transaction timeout | txn_id=0xB691 src=PCIE dst=DDR rc=-62",
+        "[00:00:03.516] NOC: ERROR: NoC error register snapshot | fabric=NOC0",
+        "    REG_DUMP_BEGIN ...",
+        "[00:00:03.546] SYSTEM: FATAL: Interconnect failure | reason=NOC_TIMEOUT"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000021:NOC_TIMEOUT",
+          "run_id": "000021",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_NOC_DEADLOCK",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Dependency cycle suspected ; NOC: Fabric <*>",
+          "distance": 0.10297471284866333
+        },
+        {
+          "failure_id": "000003:NOC_TIMEOUT",
+          "run_id": "000003",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_NOC_QOS_STARVATION",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: QoS credit starvation",
+          "distance": 0.1341761350631714
+        },
+        {
+          "failure_id": "000020:THERMAL_TRIP",
+          "run_id": "000020",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.5775357484817505
+        },
+        {
+          "failure_id": "000020:FW_EXCEPTION",
+          "run_id": "000020",
+          "failure_type": "FW_EXCEPTION",
+          "root_cause_id": "RC_FW_STACK_OVERFLOW",
+          "signature": "FW_EXCEPTION | FW: Unhandled exception ; SYSTEM: Firmware crash ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call",
+          "distance": 0.5860326290130615
+        },
+        {
+          "failure_id": "000016:DDR_ECC",
+          "run_id": "000016",
+          "failure_type": "DDR_ECC",
+          "root_cause_id": "RC_DDR_TIMING_VIOLATION",
+          "signature": "DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: Timing parameter violation ; DDR: Read retry invoked ; DDR: CDC synchronizer glitch",
+          "distance": 0.6005820035934448
+        }
+      ],
+      "source": "rule-based"
+    }
+  ],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}

@@ -1,0 +1,132 @@
+{
+  "run_id": "000023",
+  "meta": {
+    "run_id": "000023",
+    "soc": "ORION-S2",
+    "stepping": "A1",
+    "board": "EVT-1",
+    "fw_version": "1.0.3",
+    "test_suite": "io_validation",
+    "test_case": "mixed_io",
+    "voltage_mv": 850,
+    "temp_c": 55,
+    "clk_mhz": 1200,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 4,
+    "pcie_lanes": 8,
+    "workload": "io_stress",
+    "extra": {
+      "seed": "90233"
+    }
+  },
+  "anomalous": true,
+  "n_events": 2538,
+  "failures": [
+    {
+      "failure_id": "000023:PMU_DROOP",
+      "run_id": "000023",
+      "failure_type": "PMU_DROOP",
+      "severity": "critical",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 4457,
+      "last_ts_ms": 8192,
+      "summary": "PMU_DROOP in FW/PMU/SYSTEM: SoC reset asserted",
+      "signature": "PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event",
+      "evidence": [
+        "[00:00:04.432] PMU: WARN: Regulator current limit hit | i_limit_ma=2000 rail=VCORE",
+        "[00:00:04.448] PMU: WARN: Fast droop event | rail=VCORE mv_before=850 mv_after=611 cause=regulator_limit",
+        "[00:00:04.457] PMU: ERROR: Brown-out threshold crossed | threshold_mv=750",
+        "[00:00:08.190] FW: ERROR: Watchdog timeout | wd_ms=3733",
+        "[00:00:08.192] SYSTEM: FATAL: SoC reset asserted | reason=BROWNOUT_WDOG"
+      ],
+      "kv": {
+        "reason": "BROWNOUT_WDOG"
+      },
+      "cluster_id": 4,
+      "fingerprint": "4ed5633a4a03",
+      "occurrences": 1
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 4,
+      "label": "PMU_DROOP",
+      "size": 1,
+      "failure_ids": [
+        "000023:PMU_DROOP"
+      ],
+      "failure_types": [
+        "PMU_DROOP"
+      ],
+      "exemplar_failure_id": "000023:PMU_DROOP",
+      "representative_signature": "PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event"
+    }
+  ],
+  "hypotheses": [
+    {
+      "failure_id": "000023:PMU_DROOP",
+      "cluster_id": 4,
+      "root_cause": "VCORE brown-out from a fast load-step droop crossing the reset threshold: Regulator reaches its current limit and folds back",
+      "root_cause_id": "RC_REGULATOR_LIMIT",
+      "confidence": 0.86,
+      "rationale": "A fast droop event drops VCORE below the brown-out threshold, the SoC hangs, and the watchdog fires — classic insufficient decoupling / regulator load-step response under a workload transient. Evidence contains the tell-tale(s) 'regulator current limit hit', 'cause=regulator_limit', 'i_limit' for RC_REGULATOR_LIMIT.",
+      "recommended_actions": [
+        "Raise the regulator OCP limit or split the load across phases",
+        "Confirm the regulator phase count for the measured peak current",
+        "Add/verify decoupling capacitance near the affected rail",
+        "Tune regulator load-line and transient response (AVP) settings"
+      ],
+      "supporting_evidence": [
+        "[00:00:04.432] PMU: WARN: Regulator current limit hit | i_limit_ma=2000 rail=VCORE",
+        "[00:00:04.448] PMU: WARN: Fast droop event | rail=VCORE mv_before=850 mv_after=611 cause=regulator_limit",
+        "[00:00:04.457] PMU: ERROR: Brown-out threshold crossed | threshold_mv=750",
+        "[00:00:08.190] FW: ERROR: Watchdog timeout | wd_ms=3733",
+        "[00:00:08.192] SYSTEM: FATAL: SoC reset asserted | reason=BROWNOUT_WDOG"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000020:THERMAL_TRIP",
+          "run_id": "000020",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.46185415983200073
+        },
+        {
+          "failure_id": "000015:THERMAL_TRIP",
+          "run_id": "000015",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.4710056781768799
+        },
+        {
+          "failure_id": "000001:THERMAL_TRIP",
+          "run_id": "000001",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_FAN_PROFILE_BAD",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down",
+          "distance": 0.5788917541503906
+        },
+        {
+          "failure_id": "000018:THERMAL_TRIP",
+          "run_id": "000018",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_HEATSINK_POOR",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down",
+          "distance": 0.6107786893844604
+        },
+        {
+          "failure_id": "000010:NOC_TIMEOUT",
+          "run_id": "000010",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_DMA_BURST_OVERFLOW",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow",
+          "distance": 0.6381949782371521
+        }
+      ],
+      "source": "rule-based"
+    }
+  ],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}

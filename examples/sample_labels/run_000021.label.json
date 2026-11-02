@@ -1,0 +1,35 @@
+{
+  "run_id": "000021",
+  "anomalous": true,
+  "failure_types": [
+    "NOC_TIMEOUT"
+  ],
+  "root_cause_id": "RC_NOC_DEADLOCK",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_NOC_TXN_TIMEOUT",
+      "failure_type": "NOC_TIMEOUT",
+      "root_cause_id": "RC_NOC_DEADLOCK",
+      "start_ts_ms": 3806,
+      "end_ts_ms": 4799,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000021",
+    "soc": "NEBULA-A0",
+    "stepping": "A1",
+    "board": "EVT-2",
+    "fw_version": "0.9.21",
+    "test_suite": "psv_stress",
+    "test_case": "mixed_io",
+    "seed": 90231,
+    "voltage_mv": 900,
+    "temp_c": 75,
+    "clk_mhz": 1000,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 4,
+    "pcie_lanes": 4,
+    "workload": "idle"
+  }
+}

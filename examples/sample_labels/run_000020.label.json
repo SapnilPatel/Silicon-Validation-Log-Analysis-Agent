@@ -1,0 +1,44 @@
+{
+  "run_id": "000020",
+  "anomalous": true,
+  "failure_types": [
+    "FW_EXCEPTION",
+    "THERMAL_TRIP"
+  ],
+  "root_cause_id": "RC_WORKLOAD_BURST",
+  "injected_patterns": [
+    {
+      "pattern_id": "P_THERMAL_TRIP",
+      "failure_type": "THERMAL_TRIP",
+      "root_cause_id": "RC_WORKLOAD_BURST",
+      "start_ts_ms": 2236,
+      "end_ts_ms": 3048,
+      "severity": "high"
+    },
+    {
+      "pattern_id": "P_FW_EXCEPTION",
+      "failure_type": "FW_EXCEPTION",
+      "root_cause_id": "RC_FW_STACK_OVERFLOW",
+      "start_ts_ms": 1291,
+      "end_ts_ms": 1540,
+      "severity": "high"
+    }
+  ],
+  "meta": {
+    "run_id": "000020",
+    "soc": "NEBULA-A0",
+    "stepping": "A0",
+    "board": "EVT-1",
+    "fw_version": "0.9.14",
+    "test_suite": "psv_stress",
+    "test_case": "noc_fabric_stress",
+    "seed": 90230,
+    "voltage_mv": 950,
+    "temp_c": 95,
+    "clk_mhz": 1000,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 16,
+    "workload": "mixed"
+  }
+}

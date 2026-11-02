@@ -1,0 +1,140 @@
+{
+  "run_id": "000000",
+  "meta": {
+    "run_id": "000000",
+    "soc": "NEBULA-A0",
+    "stepping": "B0",
+    "board": "DVT-1",
+    "fw_version": "0.9.14",
+    "test_suite": "psv_stress",
+    "test_case": "mixed_io",
+    "voltage_mv": 850,
+    "temp_c": 55,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 2400,
+    "pcie_gen": 4,
+    "pcie_lanes": 4,
+    "workload": "compute_burst",
+    "extra": {
+      "seed": "90210"
+    }
+  },
+  "anomalous": true,
+  "n_events": 2494,
+  "failures": [
+    {
+      "failure_id": "000000:DDR_ECC",
+      "run_id": "000000",
+      "failure_type": "DDR_ECC",
+      "severity": "critical",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 8855,
+      "last_ts_ms": 8992,
+      "summary": "DDR_ECC in DDR/FW/SYSTEM: DDR subsystem failure",
+      "signature": "DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: CDC synchronizer glitch ; DDR: Read retry invoked",
+      "evidence": [
+        "[00:00:08.503] DDR: WARN: ECC corrected errors rising | ch=1 bank=6 delta=107",
+        "[00:00:08.526] DDR: WARN: CDC synchronizer glitch | fifo=rd_fifo domain=phy->ctrl",
+        "[00:00:08.621] DDR: WARN: Read retry invoked | ch=1 addr=0x12410B7E count=4",
+        "[00:00:08.855] DDR: ERROR: ECC uncorrectable error | ch=1 bank=6 syndrome=0xF709",
+        "[00:00:08.910] FW: ERROR: Memtest mismatch | addr=0x957A5CF9 expected=0xDEADBEEF got=0xF4752381",
+        "[00:00:08.969] DDR: ERROR: DDR PHY register snapshot | ch=1",
+        "    REG_DUMP_BEGIN ...",
+        "[00:00:08.992] SYSTEM: FATAL: DDR subsystem failure | ch=1 dram_freq_mhz=2400"
+      ],
+      "kv": {
+        "ch": "1",
+        "dram_freq_mhz": "2400"
+      },
+      "cluster_id": 0,
+      "fingerprint": "124fff44194e",
+      "occurrences": 1
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "label": "DDR_ECC",
+      "size": 2,
+      "failure_ids": [
+        "000000:DDR_ECC",
+        "000016:DDR_ECC"
+      ],
+      "failure_types": [
+        "DDR_ECC"
+      ],
+      "exemplar_failure_id": "000000:DDR_ECC",
+      "representative_signature": "DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: CDC synchronizer glitch ; DDR: Read retry invoked"
+    }
+  ],
+  "hypotheses": [
+    {
+      "failure_id": "000000:DDR_ECC",
+      "cluster_id": 0,
+      "root_cause": "DDR uncorrectable ECC error following rising corrected-error rate: Clock-domain-crossing synchroniser glitch in the controller",
+      "root_cause_id": "RC_DDR_CDC_GLITCH",
+      "confidence": 0.83,
+      "rationale": "Corrected ECC errors trending up, then a read-retry, then an uncorrectable error and memtest mismatch indicate a marginal DRAM timing/training edge, often aggravated by voltage droop under load. Evidence contains the tell-tale(s) 'cdc synchronizer glitch', 'cdc' for RC_DDR_CDC_GLITCH.",
+      "recommended_actions": [
+        "Review CDC constraints on the controller/PHY boundary",
+        "Reproduce at corner voltage/frequency to isolate the glitch",
+        "Re-run DDR write-leveling/read training and widen timing margins",
+        "Correlate UE timestamps with PMU droop / thermal events"
+      ],
+      "supporting_evidence": [
+        "[00:00:08.503] DDR: WARN: ECC corrected errors rising | ch=1 bank=6 delta=107",
+        "[00:00:08.526] DDR: WARN: CDC synchronizer glitch | fifo=rd_fifo domain=phy->ctrl",
+        "[00:00:08.621] DDR: WARN: Read retry invoked | ch=1 addr=0x12410B7E count=4",
+        "[00:00:08.855] DDR: ERROR: ECC uncorrectable error | ch=1 bank=6 syndrome=0xF709",
+        "[00:00:08.910] FW: ERROR: Memtest mismatch | addr=0x957A5CF9 expected=0xDEADBEEF got=0xF4752381",
+        "[00:00:08.969] DDR: ERROR: DDR PHY register snapshot | ch=1",
+        "    REG_DUMP_BEGIN ...",
+        "[00:00:08.992] SYSTEM: FATAL: DDR subsystem failure | ch=1 dram_freq_mhz=2400"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000016:DDR_ECC",
+          "run_id": "000016",
+          "failure_type": "DDR_ECC",
+          "root_cause_id": "RC_DDR_TIMING_VIOLATION",
+          "signature": "DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: Timing parameter violation ; DDR: Read retry invoked ; DDR: CDC synchronizer glitch",
+          "distance": 0.015074729919433594
+        },
+        {
+          "failure_id": "000010:NOC_TIMEOUT",
+          "run_id": "000010",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_DMA_BURST_OVERFLOW",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow",
+          "distance": 0.6098325252532959
+        },
+        {
+          "failure_id": "000020:THERMAL_TRIP",
+          "run_id": "000020",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.6235146522521973
+        },
+        {
+          "failure_id": "000003:NOC_TIMEOUT",
+          "run_id": "000003",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_NOC_QOS_STARVATION",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: QoS credit starvation",
+          "distance": 0.6281558275222778
+        },
+        {
+          "failure_id": "000021:NOC_TIMEOUT",
+          "run_id": "000021",
+          "failure_type": "NOC_TIMEOUT",
+          "root_cause_id": "RC_NOC_DEADLOCK",
+          "signature": "NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Dependency cycle suspected ; NOC: Fabric <*>",
+          "distance": 0.6342806816101074
+        }
+      ],
+      "source": "rule-based"
+    }
+  ],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}

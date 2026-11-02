@@ -1,0 +1,28 @@
+{
+  "run_id": "000007",
+  "meta": {
+    "run_id": "000007",
+    "soc": "AURORA-X1",
+    "stepping": "A1",
+    "board": "EVT-1",
+    "fw_version": "1.0.3",
+    "test_suite": "psv_stress",
+    "test_case": "ddr_memtest_long",
+    "voltage_mv": 900,
+    "temp_c": 85,
+    "clk_mhz": 800,
+    "dram_freq_mhz": 3600,
+    "pcie_gen": 4,
+    "pcie_lanes": 8,
+    "workload": "compute_burst",
+    "extra": {
+      "seed": "90217"
+    }
+  },
+  "anomalous": false,
+  "n_events": 2605,
+  "failures": [],
+  "clusters": [],
+  "hypotheses": [],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}

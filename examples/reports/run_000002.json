@@ -1,0 +1,28 @@
+{
+  "run_id": "000002",
+  "meta": {
+    "run_id": "000002",
+    "soc": "NEBULA-A0",
+    "stepping": "B0",
+    "board": "EVT-2",
+    "fw_version": "0.9.21",
+    "test_suite": "bringup",
+    "test_case": "thermal_soak",
+    "voltage_mv": 900,
+    "temp_c": 55,
+    "clk_mhz": 1200,
+    "dram_freq_mhz": 2400,
+    "pcie_gen": 3,
+    "pcie_lanes": 4,
+    "workload": "idle",
+    "extra": {
+      "seed": "90212"
+    }
+  },
+  "anomalous": false,
+  "n_events": 1787,
+  "failures": [],
+  "clusters": [],
+  "hypotheses": [],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}

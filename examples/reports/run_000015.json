@@ -1,0 +1,135 @@
+{
+  "run_id": "000015",
+  "meta": {
+    "run_id": "000015",
+    "soc": "AURORA-X1",
+    "stepping": "A1",
+    "board": "DVT-1",
+    "fw_version": "0.9.21",
+    "test_suite": "psv_stress",
+    "test_case": "thermal_soak",
+    "voltage_mv": 850,
+    "temp_c": 95,
+    "clk_mhz": 1200,
+    "dram_freq_mhz": 3200,
+    "pcie_gen": 3,
+    "pcie_lanes": 4,
+    "workload": "io_stress",
+    "extra": {
+      "seed": "90225"
+    }
+  },
+  "anomalous": true,
+  "n_events": 1757,
+  "failures": [
+    {
+      "failure_id": "000015:THERMAL_TRIP",
+      "run_id": "000015",
+      "failure_type": "THERMAL_TRIP",
+      "severity": "high",
+      "subsys": "SYSTEM",
+      "first_ts_ms": 1997,
+      "last_ts_ms": 2010,
+      "summary": "THERMAL_TRIP in SYSTEM/THERMAL: Emergency shutdown",
+      "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+      "evidence": [
+        "[00:00:01.498] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS",
+        "[00:00:01.526] PMU: WARN: Power burst detected | p_w=30 dur_ms=921",
+        "[00:00:01.684] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000",
+        "[00:00:01.997] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=119 threshold_c=105",
+        "[00:00:02.010] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP"
+      ],
+      "kv": {
+        "reason": "THERMAL_TRIP"
+      },
+      "cluster_id": 5,
+      "fingerprint": "6dd086528ae9",
+      "occurrences": 1
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 5,
+      "label": "THERMAL_TRIP",
+      "size": 4,
+      "failure_ids": [
+        "000001:THERMAL_TRIP",
+        "000015:THERMAL_TRIP",
+        "000018:THERMAL_TRIP",
+        "000020:THERMAL_TRIP"
+      ],
+      "failure_types": [
+        "THERMAL_TRIP"
+      ],
+      "exemplar_failure_id": "000018:THERMAL_TRIP",
+      "representative_signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down"
+    }
+  ],
+  "hypotheses": [
+    {
+      "failure_id": "000015:THERMAL_TRIP",
+      "cluster_id": 5,
+      "root_cause": "Junction temperature exceeded the thermal trip threshold: A sustained power burst outruns the cooling headroom",
+      "root_cause_id": "RC_WORKLOAD_BURST",
+      "confidence": 0.87,
+      "rationale": "Temperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload. Evidence contains the tell-tale(s) 'power burst detected', 'p_w=' for RC_WORKLOAD_BURST. 1 of 3 similar historical incidents (runs 000020) were resolved as RC_WORKLOAD_BURST.",
+      "recommended_actions": [
+        "Cap the burst power or lengthen the DVFS step-down reaction",
+        "Add thermal headroom to the test's power envelope",
+        "Inspect heatsink mounting/TIM and airflow on the DUT",
+        "Make the fan/DVFS profile more aggressive ahead of the trip point"
+      ],
+      "supporting_evidence": [
+        "[00:00:01.498] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS",
+        "[00:00:01.526] PMU: WARN: Power burst detected | p_w=30 dur_ms=921",
+        "[00:00:01.684] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000",
+        "[00:00:01.997] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=119 threshold_c=105",
+        "[00:00:02.010] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP"
+      ],
+      "similar_incidents": [
+        {
+          "failure_id": "000020:THERMAL_TRIP",
+          "run_id": "000020",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_WORKLOAD_BURST",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "distance": 0.07257932424545288
+        },
+        {
+          "failure_id": "000018:THERMAL_TRIP",
+          "run_id": "000018",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_HEATSINK_POOR",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down",
+          "distance": 0.12242364883422852
+        },
+        {
+          "failure_id": "000001:THERMAL_TRIP",
+          "run_id": "000001",
+          "failure_type": "THERMAL_TRIP",
+          "root_cause_id": "RC_FAN_PROFILE_BAD",
+          "signature": "THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down",
+          "distance": 0.1821119785308838
+        },
+        {
+          "failure_id": "000023:PMU_DROOP",
+          "run_id": "000023",
+          "failure_type": "PMU_DROOP",
+          "root_cause_id": "RC_REGULATOR_LIMIT",
+          "signature": "PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event",
+          "distance": 0.47100549936294556
+        },
+        {
+          "failure_id": "000001:PCIE_TIMEOUT",
+          "run_id": "000001",
+          "failure_type": "PCIE_TIMEOUT",
+          "root_cause_id": "RC_PCIE_REFCLK_GATING",
+          "signature": "PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step-down ; PCIE: AER: Corrected error ; FW: Retrying PCIe init",
+          "distance": 0.5543044805526733
+        }
+      ],
+      "source": "rule-based"
+    }
+  ],
+  "generated_at": "2026-11-02T23:22:00+00:00"
+}
