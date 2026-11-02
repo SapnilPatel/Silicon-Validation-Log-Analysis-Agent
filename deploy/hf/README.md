@@ -3,10 +3,8 @@ title: SVLA-Agent
 emoji: 🔬
 colorFrom: blue
 colorTo: green
-sdk: streamlit
-sdk_version: 1.50.0
-app_file: app/streamlit_app.py
-python_version: "3.12"
+sdk: docker
+app_port: 7860
 pinned: false
 license: mit
 short_description: Agentic AI debug assistant for post-silicon validation logs

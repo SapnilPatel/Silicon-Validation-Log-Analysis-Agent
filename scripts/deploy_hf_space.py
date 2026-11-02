@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Deploy the SVLA-Agent dashboard to a Hugging Face Space (Streamlit SDK).
+"""Deploy the SVLA-Agent dashboard to a Hugging Face Space (Docker SDK).
 
 Stages exactly what the Space needs - the app, the package source (the app adds
 ``src/`` to ``sys.path``), the bundled sample dataset + reports, requirements and
@@ -24,13 +24,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 INCLUDE: list[tuple[Path, str]] = [
     (ROOT / "deploy/hf/README.md", "README.md"),
+    (ROOT / "deploy/hf/Dockerfile", "Dockerfile"),
     (ROOT / "requirements.txt", "requirements.txt"),
     (ROOT / "app/streamlit_app.py", "app/streamlit_app.py"),
     (ROOT / "src/svla_agent", "src/svla_agent"),
     (ROOT / "examples", "examples"),
     (ROOT / "LICENSE", "LICENSE"),
 ]
-SPACE_VARIABLES = {"SVLA_VECTOR_BACKEND": "memory", "SVLA_LOG_LEVEL": "INFO"}
+SPACE_VARIABLES = {"SVLA_LOG_LEVEL": "INFO"}
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store")
 
 
@@ -66,7 +67,7 @@ def main() -> int:
     who = api.whoami()
     print(f"Authenticated as {who.get('name')}")
     url = api.create_repo(
-        args.repo, repo_type="space", space_sdk="streamlit", private=args.private, exist_ok=True
+        args.repo, repo_type="space", space_sdk="docker", private=args.private, exist_ok=True
     )
     print(f"Space: {url}")
     for key, value in SPACE_VARIABLES.items():

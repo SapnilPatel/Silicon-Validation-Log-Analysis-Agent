@@ -50,7 +50,6 @@ svla = "svla_agent.cli:app"
 [project.urls]
 Homepage = "https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent"
 Repository = "https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent"
-Demo = "https://huggingface.co/spaces/Sapnil/svla-agent"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/svla_agent"]

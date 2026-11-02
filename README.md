@@ -1,7 +1,7 @@
 # SVLA-Agent
 
 [![CI](https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/actions/workflows/ci.yml)
-[![Live demo](https://img.shields.io/badge/demo-Hugging%20Face%20Space-yellow)](https://huggingface.co/spaces/Sapnil/svla-agent)
+[![Deploy](https://img.shields.io/badge/deploy-Docker%20%7C%20HF%20Space%20%7C%20Streamlit%20Cloud-informational)](docs/DEPLOYMENT.md)
 [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.12-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/lint-ruff-orange)](https://github.com/astral-sh/ruff)
@@ -13,7 +13,8 @@ clusters recurring failure families, retrieves similar historical incidents (RAG
 and names a specific, evidence-backed root cause with remediation steps — as
 Markdown/JSON debug reports, a REST API and an interactive dashboard.
 
-> **Live demo:** https://huggingface.co/spaces/Sapnil/svla-agent
+> **Try it:** `pip install -e ".[app]" && streamlit run app/streamlit_app.py` runs on the bundled sample
+> dataset; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for hosting it (Docker, Hugging Face, Streamlit Cloud).
 >
 > The whole pipeline runs **offline** out of the box (deterministic fallbacks for
 > embeddings, retrieval and hypotheses). Add an `ANTHROPIC_API_KEY` — or paste one

@@ -1,22 +1,26 @@
 # Deployment
 
-## Hugging Face Spaces (live demo)
+## Hugging Face Spaces
 
-The dashboard runs as a Streamlit Space. `scripts/deploy_hf_space.py` stages the
-files a Space needs (app, package source, bundled sample data/reports,
-`requirements.txt`, Space README) and uploads them with `huggingface_hub`.
+> Hugging Face requires a **PRO subscription** to host Docker/Gradio Spaces on the
+> free CPU tier (static Spaces are the only free kind), and new Streamlit-SDK
+> Spaces can no longer be created. With a PRO account the script below deploys
+> in one command.
+
+The dashboard runs as a **Docker Space** (`deploy/hf/Dockerfile`, Streamlit on
+port 7860; Hugging Face no longer accepts new Streamlit-SDK Spaces).
+`scripts/deploy_hf_space.py` stages the files a Space needs (Dockerfile, app,
+package source, bundled sample data/reports, `requirements.txt`, Space README)
+and uploads them with `huggingface_hub`.
 
 ```bash
 # one-time: hf auth login   (write token)
 make deploy-hf                   # or: python scripts/deploy_hf_space.py --repo <user>/svla-agent
 ```
 
-Space variables set by the script:
-
-| Variable | Value | Why |
-|---|---|---|
-| `SVLA_VECTOR_BACKEND` | `memory` | no native sqlite/Chroma dependency on the Space |
-| `SVLA_LOG_LEVEL` | `INFO` | |
+Environment baked into the Space image: `SVLA_VECTOR_BACKEND=memory` (no native
+Chroma dependency), paths pointing at the bundled `examples/`, a writable store
+dir and HF cache under the non-root user.
 
 No Anthropic key is stored on the Space. Visitors paste their own key in the
 sidebar (session-only) to switch the hypothesis agent to Claude.
