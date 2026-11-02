@@ -7,7 +7,7 @@ the whole pipeline runnable offline.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,app]"
+pip install -e ".[dev,app,api]"
 pre-commit install
 ```
 
@@ -48,8 +48,12 @@ CI runs the same checks on Python 3.10–3.12.
   the filename layout differs).
 - **New failure type** → extend the rules in `classify/classifier.py` and the
   prior in `hypothesize/knowledge.py`.
-- **New vector backend** → implement the `VectorStore` surface
-  (`index`/`query`/`count`/`reset`) in `svla_agent/rag/`.
+- **New vector backend** → subclass `BaseVectorStore` in `svla_agent/rag/` and
+  register it in `rag/store.py` (`_BACKENDS`).
+- **New LLM provider** → implement `LLMProvider.structured()` in
+  `hypothesize/llm.py` and register it in `PROVIDERS`.
+- **New root cause** → add it to `ROOT_CAUSES` in `hypothesize/knowledge.py`
+  *and* teach the generator to emit its marker (a test enforces the two agree).
 - **New metric** → add to `eval/metrics.py` and surface it in `cli.py`.
 
 ## Commit messages
