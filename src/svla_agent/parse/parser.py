@@ -17,8 +17,10 @@ import re
 from drain3 import TemplateMiner
 from drain3.template_miner_config import TemplateMinerConfig
 
+from ..config import get_settings
 from ..ingest.reader import RunFiles
 from ..models import Event, LogLevel, ParsedRun, RunMeta
+from ..privacy.redact import redact_event
 
 _EVENT_RE = re.compile(
     r"^\[(?P<h>\d{2}):(?P<m>\d{2}):(?P<s>\d{2})\.(?P<ms>\d{3})\]\s+"
@@ -94,8 +96,13 @@ def parse_header(lines: list[str]) -> RunMeta:
     return RunMeta.model_validate(fields)
 
 
-def parse_run(run: RunFiles) -> ParsedRun:
-    """Parse all source files of a run into an ordered :class:`ParsedRun`."""
+def parse_run(run: RunFiles, redact: bool | None = None) -> ParsedRun:
+    """Parse all source files of a run into an ordered :class:`ParsedRun`.
+
+    When ``redact`` is true (default: ``settings.redact``), PII and secrets are
+    scrubbed from every event before anything downstream can see them.
+    """
+    redact = get_settings().redact if redact is None else redact
     miner = _new_template_miner()
     header_lines: list[str] = []
     events: list[Event] = []
@@ -135,6 +142,9 @@ def parse_run(run: RunFiles) -> ParsedRun:
             )
         )
 
+    if redact:
+        for ev in events:
+            redact_event(ev)
     events.sort(key=lambda e: e.ts_ms)
     meta = parse_header(header_lines)
     if meta.run_id in {"unknown", ""}:
