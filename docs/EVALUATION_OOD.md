@@ -16,7 +16,8 @@ taxonomy is not ours, and the message vocabulary is different.
 
 ```bash
 svla import-bgl --download --window-min 30      # 4.75 M lines -> 2,906 windows + labels (13 s)
-svla eval --logs data/bgl/silicon_logs --labels data/bgl/labels --out reports/metrics_bgl.json   # add --llm to score Claude
+svla eval --logs data/bgl/silicon_logs --labels data/bgl/labels --out reports/metrics_bgl.json
+svla eval --llm --logs data/bgl/silicon_logs --labels data/bgl/labels --out reports/metrics_bgl_claude.json   # paid; resumable
 ```
 
 - **Windows as runs.** The stream is cut into 30-minute windows (windows with
@@ -38,20 +39,21 @@ svla eval --logs data/bgl/silicon_logs --labels data/bgl/labels --out reports/me
 2,906 windows, 633 anomalous; 1,249 failures classified; 968 windows held out
 (442 failures, 296 with an alert label).
 
-| Metric | transformer embeddings | hashing embeddings (offline) |
-|---|:---:|:---:|
-| Window anomaly detection precision / recall / F1 | 0.64 / 1.00 / 0.78 | 0.64 / 1.00 / 0.78 |
-| Retrieval recall@5 (same component type) / MRR | 1.00 / 1.00 | 0.99 / 0.99 |
-| Retrieval recall@5 (same alert tag) | 0.86 | 0.84 |
-| **Alert tag named by retrieval alone, top-1** | **0.77** (229/296) | **0.71** (210/296) |
-| Mean confidence when right / wrong | 0.77 / 0.60 | 0.76 / 0.59 |
-| Cluster purity vs. alert tag | 0.82 | 0.82 |
-| Parse coverage (lines matched by the BGL reader) | 100% (0 unparsed) | 100% |
+| Metric | Claude agent (transformers) | rule-based (transformers) | rule-based (hashing, offline) |
+|---|:---:|:---:|:---:|
+| Window anomaly detection precision / recall / F1 | 0.64 / 1.00 / 0.78 | 0.64 / 1.00 / 0.78 | 0.64 / 1.00 / 0.78 |
+| Retrieval recall@5 (same component type) / MRR | 1.00 / 1.00 | 1.00 / 1.00 | 0.99 / 0.99 |
+| Retrieval recall@5 (same alert tag) | 0.85 | 0.86 | 0.84 |
+| **Alert tag named from retrieved incidents, top-1** | **0.76** (224/296) | **0.77** (229/296) | **0.71** (210/296) |
+| Answered (did not say OTHER) | 90% | 97% | 93% |
+| Mean confidence when right / wrong | 0.84 / 0.62 | 0.77 / 0.60 | 0.76 / 0.59 |
+| Cluster purity vs. alert tag | 0.82 | 0.82 | 0.82 |
+| Parse coverage (lines matched by the BGL reader) | 100% | 100% | 100% |
 
-Per alert family, top-1 by retrieval (transformer embeddings): `APP` 0.92
-(58/63), `KERNEL` 0.83 (156/187), `MMCS` 0.67 (4/6), `MONITOR` 0.67 (2/3),
-`BGLMASTER` 0.56 (5/9), `LINKCARD` 0.40 (2/5), `HARDWARE` 0.17 (1/6),
-`DISCOVERY` 0.06 (1/17).
+Per alert family, top-1 (Claude / rule-based, transformer embeddings): `APP`
+0.94 / 0.92 (63), `KERNEL` 0.80 / 0.83 (187), `MMCS` 0.67 / 0.67 (6), `MONITOR`
+0.67 / 0.67 (3), `LINKCARD` 0.60 / 0.40 (5), `BGLMASTER` 0.56 / 0.56 (9),
+`HARDWARE` 0.17 / 0.17 (6), `DISCOVERY` 0.06 / 0.06 (17).
 
 ## What this says
 
@@ -69,12 +71,29 @@ Per alert family, top-1 by retrieval (transformer embeddings): `APP` 0.92
   problem, not a method problem.
 - **Clusters are mostly tag-pure (0.82)** even though they were formed with no
   knowledge of the tags, which supports using families as triage buckets.
-- **Confidence still separates right from wrong** (0.77 vs 0.60), though less
+- **Claude and the rules tie again (0.76 vs 0.77).** Both can only choose among
+  the tags attached to the retrieved windows, so the ceiling is set by retrieval
+  (0.85 recall@5). Claude abstains more often (answers 90% vs 97%) and is better
+  calibrated: 0.84 when right against 0.62 when wrong, versus 0.77 / 0.60 for
+  the rules. Same pattern as the synthetic corpus: the LLM's edge is in knowing
+  when it does not know, not in raw accuracy.
+- **Confidence still separates right from wrong** (rules 0.77 vs 0.60), though less
   sharply than on the synthetic corpus; a catalogue-free setting leaves only
   retrieval agreement to go on.
 - **Failure-type scores are not reported.** BGL's alert taxonomy does not
   overlap the silicon failure types, so the typing metric is undefined here
   (the evaluator says so explicitly in the metrics file).
+
+## Cost of the Claude column, honestly
+
+The published Claude column is 442 `claude-opus-5-5` calls at medium effort,
+about 2.5 hours wall-clock on a laptop (sequential, ~15 s per call). Getting
+there cost more: a first full pass returned an empty column because the tool
+schema only allowed catalogue ids (fixed in `afbe4ab`), a second pass stalled
+overnight on dropped connections, and 29 calls in the third failed on the
+network and were redone from the per-failure cache. Roughly 1,300 calls in
+total, in the order of $15–25. The request timeout and the resumable cache
+(`--out` + `.hypcache.json`) exist because of this.
 
 ## Reproduce
 

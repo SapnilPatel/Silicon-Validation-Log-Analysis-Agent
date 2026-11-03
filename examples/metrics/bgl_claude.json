@@ -1,0 +1,398 @@
+{
+  "n_runs": 2906,
+  "n_failures": 1249,
+  "detection": {
+    "precision": 0.64,
+    "recall": 1.0,
+    "f1": 0.7805,
+    "accuracy": 0.8775,
+    "support": {
+      "tp": 633,
+      "fp": 356,
+      "fn": 0,
+      "tn": 1917
+    }
+  },
+  "failure_typing": {
+    "micro": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "per_type": {
+      "APPALLOC": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPBUSY": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPCHILD": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPOUT": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPREAD": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPRES": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPSEV": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPTO": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPTORUS": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APPUNAV": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "APP_FAILURE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "BGLMASTER_FAILURE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "DISCOVERY_FAILURE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "HARDWARE_FAILURE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNBIT": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNCON": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNDTLB": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNEL_FAILURE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNEXT": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNFLOAT": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNMC": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNMICRO": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNMNT": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNMNTF": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNNOETH": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNPAN": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNPOW": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNPROG": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNREC": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNRTSP": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNSERV": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNSOCK": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNSTOR": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNTERM": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "KERNTLBE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "LINKBLL": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "LINKCARD_FAILURE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "LINKDISC": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "LINKIAP": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "LINKPAP": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "MASABNORM": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "MASNORM": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "MMCS": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "MMCS_FAILURE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "MONILL": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "MONITOR_FAILURE": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "MONPOW": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
+    "note": "label vocabulary does not overlap the classifier's failure types (out-of-distribution dataset); typing scores are not meaningful here"
+  },
+  "clustering": {
+    "n_clusters": 151,
+    "n_failures": 1249,
+    "silhouette": 0.4239,
+    "davies_bouldin": 1.2923,
+    "homogeneity_vs_failure_type": 1.0,
+    "completeness_vs_failure_type": 0.3329,
+    "purity": 1.0,
+    "homogeneity_vs_root_cause": 0.7868,
+    "completeness_vs_root_cause": 0.455,
+    "purity_vs_root_cause": 0.8225
+  },
+  "holdout": {
+    "holdout_fraction": 0.3,
+    "train_runs": 1938,
+    "test_runs": 968,
+    "train_failures": 807,
+    "test_failures": 442,
+    "retrieval": {
+      "k": 5,
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "considered": 442,
+      "root_cause_recall_at_k": 0.848,
+      "root_cause_considered": 296
+    },
+    "root_cause": {
+      "accuracy": 0.7568,
+      "n": 296,
+      "predicted_rate": 0.8986,
+      "mean_confidence_correct": 0.843,
+      "mean_confidence_wrong": 0.624,
+      "per_type": {
+        "APP_FAILURE": {
+          "correct": 59,
+          "total": 63,
+          "accuracy": 0.9365
+        },
+        "BGLMASTER_FAILURE": {
+          "correct": 5,
+          "total": 9,
+          "accuracy": 0.5556
+        },
+        "DISCOVERY_FAILURE": {
+          "correct": 1,
+          "total": 17,
+          "accuracy": 0.0588
+        },
+        "HARDWARE_FAILURE": {
+          "correct": 1,
+          "total": 6,
+          "accuracy": 0.1667
+        },
+        "KERNEL_FAILURE": {
+          "correct": 149,
+          "total": 187,
+          "accuracy": 0.7968
+        },
+        "LINKCARD_FAILURE": {
+          "correct": 3,
+          "total": 5,
+          "accuracy": 0.6
+        },
+        "MMCS_FAILURE": {
+          "correct": 4,
+          "total": 6,
+          "accuracy": 0.6667
+        },
+        "MONITOR_FAILURE": {
+          "correct": 2,
+          "total": 3,
+          "accuracy": 0.6667
+        }
+      }
+    },
+    "hypothesis_sources": {
+      "llm:claude-opus-5-5": 442
+    },
+    "hypotheses_reused_from_cache": 413
+  },
+  "retrieval": {
+    "k": 5,
+    "recall_at_k": 1.0,
+    "mrr": 1.0,
+    "considered": 442,
+    "root_cause_recall_at_k": 0.848,
+    "root_cause_considered": 296
+  },
+  "root_cause": {
+    "accuracy": 0.7568,
+    "n": 296,
+    "predicted_rate": 0.8986,
+    "mean_confidence_correct": 0.843,
+    "mean_confidence_wrong": 0.624,
+    "per_type": {
+      "APP_FAILURE": {
+        "correct": 59,
+        "total": 63,
+        "accuracy": 0.9365
+      },
+      "BGLMASTER_FAILURE": {
+        "correct": 5,
+        "total": 9,
+        "accuracy": 0.5556
+      },
+      "DISCOVERY_FAILURE": {
+        "correct": 1,
+        "total": 17,
+        "accuracy": 0.0588
+      },
+      "HARDWARE_FAILURE": {
+        "correct": 1,
+        "total": 6,
+        "accuracy": 0.1667
+      },
+      "KERNEL_FAILURE": {
+        "correct": 149,
+        "total": 187,
+        "accuracy": 0.7968
+      },
+      "LINKCARD_FAILURE": {
+        "correct": 3,
+        "total": 5,
+        "accuracy": 0.6
+      },
+      "MMCS_FAILURE": {
+        "correct": 4,
+        "total": 6,
+        "accuracy": 0.6667
+      },
+      "MONITOR_FAILURE": {
+        "correct": 2,
+        "total": 3,
+        "accuracy": 0.6667
+      }
+    }
+  }
+}

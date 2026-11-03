@@ -121,7 +121,7 @@
 
   function renderOOD(b) {
     const m = b.metrics;
-    const cols = [["bgl_sentence_transformers", "transformers"], ["bgl_hashing", "hashing (offline)"]].filter(([k]) => m[k]);
+    const cols = [["bgl_claude", "Claude agent"], ["bgl_sentence_transformers", "rules · transformers"], ["bgl_hashing", "rules · hashing"]].filter(([k]) => m[k]);
     if (!cols.length) { $("#ood-lede").textContent = "No out-of-distribution metrics in this build."; return; }
     const any = m[cols[0][0]], ho = any.holdout || {};
     const get = (k, path) => path.split(".").reduce((o, p) => (o == null ? undefined : o[p]), m[k]);
@@ -130,7 +130,8 @@
       ["Window anomaly detection P / R / F1", (k) => `${fmt(get(k, "detection.precision"))} / ${fmt(get(k, "detection.recall"))} / ${fmt(get(k, "detection.f1"))}`],
       ["Retrieval recall@5 (same component) / MRR", (k) => `${fmt(get(k, "retrieval.recall_at_k"))} / ${fmt(get(k, "retrieval.mrr"))}`],
       ["Retrieval recall@5 (same alert tag)", (k) => fmt(get(k, "retrieval.root_cause_recall_at_k"))],
-      ["Alert tag by retrieval alone, top-1", (k) => `${fmt(get(k, "root_cause.accuracy"))} (n=${get(k, "root_cause.n") ?? "—"})`, true],
+      ["Alert tag from retrieved incidents, top-1", (k) => `${fmt(get(k, "root_cause.accuracy"))} (n=${get(k, "root_cause.n") ?? "—"})`, true],
+      ["Answered (did not say OTHER)", (k) => pct(get(k, "root_cause.predicted_rate"))],
       ["Mean confidence when right / wrong", (k) => `${fmt(get(k, "root_cause.mean_confidence_correct"))} / ${fmt(get(k, "root_cause.mean_confidence_wrong"))}`],
       ["Cluster purity vs. alert tag", (k) => fmt(get(k, "clustering.purity_vs_root_cause"))],
     ];

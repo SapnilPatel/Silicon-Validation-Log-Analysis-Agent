@@ -222,17 +222,19 @@ To test the pipeline on data it was never designed around, `svla import-bgl` tur
 the real Loghub **BGL** log (4.75 M lines, 215 days, operator-assigned alert labels)
 into 2,906 thirty-minute windows and runs the unchanged pipeline on them:
 
-| Metric (BGL, 968 held-out windows) | transformers | hashing (offline) |
-|---|:---:|:---:|
-| Window anomaly detection P / R / F1 | 0.64 / 1.00 / 0.78 | 0.64 / 1.00 / 0.78 |
-| Retrieval recall@5 (same alert tag) | 0.86 | 0.84 |
-| Alert tag named by retrieval alone, top-1 (no catalogue) | **0.77** | **0.71** |
-| Cluster purity vs. alert tag | 0.82 | 0.82 |
+| Metric (BGL, 968 held-out windows) | Claude agent | rule-based (transformers) | rule-based (hashing) |
+|---|:---:|:---:|:---:|
+| Window anomaly detection P / R / F1 | 0.64 / 1.00 / 0.78 | 0.64 / 1.00 / 0.78 | 0.64 / 1.00 / 0.78 |
+| Retrieval recall@5 (same alert tag) | 0.85 | 0.86 | 0.84 |
+| Alert tag named from retrieved incidents, top-1 | **0.76** | **0.77** | **0.71** |
+| Mean confidence when right / **wrong** | 0.84 / **0.62** | 0.77 / 0.60 | 0.76 / 0.59 |
+| Cluster purity vs. alert tag | 0.82 | 0.82 | 0.82 |
 
 Recall transfers, precision does not: BGL logs many routine `FATAL` lines that
 operators never flagged, so severity alone over-flags. Retrieval generalises:
 with zero domain knowledge the nearest past windows name the operators' alert
-tag 77% of the time (92% for application alerts). Full method, per-family
+tag 77% of the time (92% for application alerts). Claude, choosing among the same
+retrieved tags, ties at 76% but abstains more and is better calibrated. Full method, per-family
 breakdown and what it implies: [docs/EVALUATION_OOD.md](docs/EVALUATION_OOD.md).
 
 ## 📄 Example report

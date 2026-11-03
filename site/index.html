@@ -80,11 +80,11 @@
     <div class="results-grid">
       <div class="table-wrap"><table class="metrics" id="ood-table"></table></div>
       <figure class="chart-card">
-        <figcaption>Alert tag named by retrieval alone, per component <span class="muted">(BGL, held-out windows, no catalogue)</span></figcaption>
+        <figcaption>Alert tag named per component <span class="muted">(BGL, held-out windows, Claude choosing among retrieved tags)</span></figcaption>
         <div id="ood-chart"></div>
       </figure>
     </div>
-    <p class="fineprint">Recall transfers, precision does not: BGL logs many routine <code>FATAL</code> lines that operators never flagged, so severity alone over-flags on real data. Retrieval generalises — with zero domain knowledge the nearest past windows name the operators' alert tag most of the time, and fail mainly on components with a handful of examples. Method and per-family breakdown in <a href="https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/blob/main/docs/EVALUATION_OOD.md" target="_blank" rel="noopener">docs/EVALUATION_OOD.md</a>.</p>
+    <p class="fineprint">Recall transfers, precision does not: BGL logs many routine <code>FATAL</code> lines that operators never flagged, so severity alone over-flags on real data. Retrieval generalises — with zero domain knowledge the nearest past windows name the operators' alert tag most of the time, and fail mainly on components with a handful of examples. Claude, choosing among the same retrieved tags, ties the rules on accuracy but abstains more and is better calibrated. Method and per-family breakdown in <a href="https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/blob/main/docs/EVALUATION_OOD.md" target="_blank" rel="noopener">docs/EVALUATION_OOD.md</a>.</p>
     <p class="fineprint">The synthetic corpus above is closed-world. Each injected failure leaves a root-cause tell-tale 90% of the time; the remaining 10% exercises the retrieval and prior fallbacks, which is where the misses come from. Detection and typing are rule-based against the generator's own vocabulary and are expected to be perfect here — they will not be on real silicon logs. The structure (evidence → candidates → calibrated confidence → actions) is what carries over.</p>
   </section>
 
