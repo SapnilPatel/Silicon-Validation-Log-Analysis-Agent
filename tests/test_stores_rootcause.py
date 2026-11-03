@@ -236,3 +236,49 @@ def test_make_store_falls_back_to_memory_when_chroma_breaks(
     assert isinstance(store, InMemoryVectorStore)
     with pytest.raises(AttributeError):
         make_store(chroma_settings, embedder, fallback=False)
+
+
+def test_llm_path_accepts_root_causes_from_retrieved_incidents(settings: Settings):
+    """With no catalogue for the type, the retrieved incidents' labels are valid answers."""
+
+    class EchoProvider:
+        name = "echo"
+
+        def __init__(self):
+            self.enum: list[str] = []
+
+        def structured(self, *, system, prompt, tool):
+            self.enum = tool["input_schema"]["properties"]["root_cause_id"]["enum"]
+            assert "No catalogue exists" in prompt
+            return {
+                "root_cause_id": "KERNDTLB",
+                "root_cause": "data TLB error",
+                "confidence": 0.7,
+                "rationale": "matches history",
+                "recommended_actions": ["check TLB"],
+            }
+
+    provider = EchoProvider()
+    agent = HypothesisAgent(settings, provider=provider)
+    f = _failure("KERNEL_FAILURE", ["KERNEL: FATAL: data TLB error interrupt"])
+    similar = [
+        RetrievedIncident(
+            failure_id="r1:KERNEL_FAILURE",
+            run_id="r1",
+            failure_type="KERNEL_FAILURE",
+            root_cause_id="KERNDTLB",
+            signature="x",
+            distance=0.1,
+        ),
+        RetrievedIncident(
+            failure_id="r2:KERNEL_FAILURE",
+            run_id="r2",
+            failure_type="KERNEL_FAILURE",
+            root_cause_id="KERNSTOR",
+            signature="y",
+            distance=0.2,
+        ),
+    ]
+    hyp = agent.generate(f, similar)
+    assert provider.enum == ["KERNDTLB", "KERNSTOR", "OTHER"]
+    assert hyp.root_cause_id == "KERNDTLB"

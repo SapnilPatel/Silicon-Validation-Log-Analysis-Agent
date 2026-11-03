@@ -42,8 +42,24 @@ _EXTRA_MARKER_WEIGHT = 0.25  # each additional marker of the same candidate
 _RAG_WEIGHT = 0.35  # per agreeing incident, scaled by similarity
 
 
-def _tool_schema(candidates: tuple[RootCause, ...]) -> dict[str, Any]:
-    ids = [c.rc_id for c in candidates] + ["OTHER"]
+def _candidate_ids(
+    candidates: tuple[RootCause, ...], similar: list[RetrievedIncident]
+) -> list[str]:
+    """Catalogue ids first, then root causes seen in retrieved incidents.
+
+    On a domain the catalogue does not cover (e.g. real BGL logs) the retrieved
+    incidents' labels are the only nameable answers - the rule-based agent votes
+    on them, so the LLM must be allowed to choose them too.
+    """
+    ids: list[str] = [c.rc_id for c in candidates]
+    for inc in similar:
+        if inc.root_cause_id and inc.root_cause_id not in ids:
+            ids.append(inc.root_cause_id)
+    return ids
+
+
+def _tool_schema(ids: list[str]) -> dict[str, Any]:
+    ids = [*ids, "OTHER"]
     return {
         "name": "submit_hypothesis",
         "description": "Submit the structured root-cause hypothesis.",
@@ -162,6 +178,13 @@ class HypothesisAgent:
                 lines.append(
                     f"  - {rc.rc_id}: {rc.description} (tell-tales: {', '.join(rc.markers)})"
                 )
+        else:
+            lines += [
+                "",
+                "No catalogue exists for this failure type. The root-cause ids attached to the "
+                "historical incidents below are the valid answers; pick the one whose incidents "
+                "best match this evidence, or OTHER if none fits.",
+            ]
         if similar:
             lines += ["", "Similar historical incidents (most similar first):"]
             for inc in similar:
@@ -178,12 +201,13 @@ class HypothesisAgent:
     ) -> Hypothesis:
         assert self.provider is not None
         candidates = candidates_for(failure.failure_type)
+        ids = _candidate_ids(candidates, similar)
         payload = self.provider.structured(
             system=_SYSTEM_PROMPT,
             prompt=self._build_prompt(failure, similar),
-            tool=_tool_schema(candidates),
+            tool=_tool_schema(ids),
         )
-        valid_ids = {c.rc_id for c in candidates}
+        valid_ids = set(ids)
         rc_id = payload.get("root_cause_id")
         rc_id = str(rc_id) if rc_id in valid_ids else None
         confidence = float(payload.get("confidence", 0.5))
