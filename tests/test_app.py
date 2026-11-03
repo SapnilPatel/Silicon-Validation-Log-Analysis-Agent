@@ -38,7 +38,7 @@ def _run(at: AppTest) -> AppTest:
 
 def test_dashboard_renders_reports_and_metrics(app_env):
     at = _run(AppTest.from_file(str(APP), default_timeout=120))
-    assert at.title[0].value.startswith("🔬 SVLA-Agent")
+    assert "SVLA-Agent" in at.title[0].value
     assert len(at.tabs) == 5
     # Overview metrics + failure-type chart rendered.
     labels = [m.label for m in at.metric]

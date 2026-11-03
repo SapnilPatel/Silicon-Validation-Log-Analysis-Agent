@@ -1,5 +1,19 @@
 # Deployment
 
+## GitHub Pages (project site + report explorer)
+
+The static showcase at **https://sapnilpatel.github.io/Silicon-Validation-Log-Analysis-Agent/**
+lives in `site/` (plain HTML/CSS/JS, no framework). `scripts/build_site.py` bundles
+the bundled example reports, the three evaluation metric files under
+`examples/metrics/` and the root-cause catalogue into `site/data/bundle.json`;
+`.github/workflows/pages.yml` runs it and deploys `site/` on every push to `main`.
+
+```bash
+python scripts/build_site.py && python -m http.server -d site 8080   # preview locally
+```
+
+GitHub Pages is static, so live analysis and uploads link out to the Streamlit app.
+
 ## Hugging Face Spaces
 
 > Hugging Face requires a **PRO subscription** to host Docker/Gradio Spaces on the

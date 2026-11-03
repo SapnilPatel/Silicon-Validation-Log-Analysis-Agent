@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SVLA-Agent — Silicon Validation Log Analysis Agent</title>
+<meta name="description" content="Agentic AI debug assistant for post-silicon validation logs: parse, classify, cluster, retrieve and name an evidence-backed root cause. Explore real reports and measured results.">
+<meta property="og:title" content="SVLA-Agent — Silicon Validation Log Analysis Agent">
+<meta property="og:description" content="From 1.45 M raw log events to a named, evidence-backed root cause. Explore the reports, the numbers and the pipeline.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔬</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#explorer">Skip to the report explorer</a>
+
+<header class="nav">
+  <a class="brand" href="#top"><span class="brand-mark">🔬</span> SVLA-Agent</a>
+  <nav>
+    <a href="#why">Why</a>
+    <a href="#pipeline">Pipeline</a>
+    <a href="#results">Results</a>
+    <a href="#explorer">Explorer</a>
+    <a href="#catalogue">Catalogue</a>
+  </nav>
+  <div class="nav-actions">
+    <a class="btn ghost" id="nav-repo" href="https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent" target="_blank" rel="noopener">GitHub</a>
+    <a class="btn primary" id="nav-live" href="https://svla-agent.streamlit.app/" target="_blank" rel="noopener">Launch live analysis ↗</a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="hero-text">
+      <p class="eyebrow">Agentic AI debug assistant · post-silicon validation</p>
+      <h1>From 1.45&nbsp;million log lines to a <em>named root cause</em> with the evidence attached.</h1>
+      <p class="lede">SVLA-Agent streams multi-source silicon test logs, mines event templates, classifies and de-duplicates failures, clusters recurring families, retrieves similar historical incidents and asks Claude — or a deterministic rule-based agent — to pick the specific root cause and the next experiment to run. Every claim below is measured and reproducible.</p>
+      <div class="hero-cta">
+        <a class="btn primary lg" href="https://svla-agent.streamlit.app/" target="_blank" rel="noopener">Launch live analysis ↗</a>
+        <a class="btn ghost lg" href="#explorer">Explore real reports ↓</a>
+      </div>
+      <p class="hero-note">Offline by default. Paste your own Anthropic key in the live app to switch the agent to Claude; nothing is stored.</p>
+    </div>
+    <div class="hero-stats" id="hero-stats" aria-label="Headline metrics"></div>
+  </section>
+
+  <section id="why" class="section">
+    <h2>What makes it different</h2>
+    <div class="cards">
+      <article class="card"><h3>Root cause, not just failure type</h3><p>Twenty named root causes across six failure families. The agent scores each candidate against the evidence and quotes the tell-tale line that decided it — a slow fan, a refclk warning, a starved QoS credit.</p></article>
+      <article class="card"><h3>Calibrated confidence</h3><p>When Claude is wrong its confidence drops to <strong>0.47</strong>; the rule-based agent stays at 0.77. A number you can actually triage on.</p></article>
+      <article class="card"><h3>Streaming and fast</h3><p>97&nbsp;MB / 1.45&nbsp;M events across 700 files parsed, template-mined and classified in <strong>23&nbsp;s</strong> on a laptop, about 64&nbsp;k events/s, with flat memory.</p></article>
+      <article class="card"><h3>Privacy first</h3><p>E-mails, IPs, MACs, serials and credentials are redacted at parse time — before anything is indexed, prompted or written into a report.</p></article>
+      <article class="card"><h3>Honest evaluation</h3><p>Retrieval and root-cause metrics use a hold-out split: the index is built from 70% of runs and the rest are scored as unseen incidents. A failure can never retrieve itself.</p></article>
+      <article class="card"><h3>Three front doors</h3><p>A <code>svla</code> CLI, a FastAPI REST service and a Streamlit dashboard share one pipeline. Pluggable vector store and LLM provider. Docker image built in CI.</p></article>
+    </div>
+  </section>
+
+  <section id="pipeline" class="section">
+    <h2>The pipeline</h2>
+    <p class="section-lede">Eight stages, each with one job and a typed hand-off. Click a stage.</p>
+    <ol class="pipeline" id="pipeline-stages"></ol>
+    <div class="stage-detail" id="stage-detail"></div>
+  </section>
+
+  <section id="results" class="section">
+    <h2>Measured results</h2>
+    <p class="section-lede" id="results-lede"></p>
+    <div class="results-grid">
+      <div class="table-wrap"><table class="metrics" id="metrics-table"></table></div>
+      <figure class="chart-card">
+        <figcaption>Root-cause top-1 accuracy by failure type <span class="muted">(Claude agent, held-out failures)</span></figcaption>
+        <div id="rc-chart"></div>
+      </figure>
+    </div>
+    <p class="fineprint">The corpus is synthetic. Each injected failure leaves a root-cause tell-tale 90% of the time; the remaining 10% exercises the retrieval and prior fallbacks, which is where the misses come from. Detection and typing are rule-based against the generator's own vocabulary and are expected to be perfect here — they will not be on real silicon logs. The structure (evidence → candidates → calibrated confidence → actions) is what carries over.</p>
+  </section>
+
+  <section id="explorer" class="section">
+    <h2>Report explorer</h2>
+    <p class="section-lede">Twenty-four bundled runs analysed by the real pipeline. Pick a run to see what the agent saw and what it concluded. For your own logs, use the <a href="https://svla-agent.streamlit.app/" target="_blank" rel="noopener">live app</a>.</p>
+    <div class="explorer">
+      <aside class="run-list">
+        <div class="run-filters">
+          <label><input type="checkbox" id="only-anomalous" checked> anomalous only</label>
+          <select id="type-filter" aria-label="Filter by failure type"><option value="">all failure types</option></select>
+        </div>
+        <ul id="runs" role="listbox" aria-label="Runs"></ul>
+      </aside>
+      <article class="run-detail" id="run-detail"></article>
+    </div>
+    <div class="overview-charts">
+      <figure class="chart-card"><figcaption>Failures by type across the bundled runs</figcaption><div id="type-chart"></div></figure>
+      <figure class="chart-card"><figcaption>Failure families (HDBSCAN within type)</figcaption><div id="cluster-table"></div></figure>
+    </div>
+  </section>
+
+  <section id="catalogue" class="section">
+    <h2>Root-cause catalogue</h2>
+    <p class="section-lede">What the agent can name, and the evidence it looks for. The same catalogue is handed to Claude as the allowed answers of a strict tool call.</p>
+    <div id="catalogue-grid" class="catalogue"></div>
+  </section>
+
+  <section class="section cta-band">
+    <div>
+      <h2>Run it on your logs</h2>
+      <p>Upload <code>run_&lt;id&gt;.&lt;source&gt;.log[.gz]</code> files in the live app, or install the package and point <code>svla process</code> at a directory. Everything runs offline unless you add a key.</p>
+    </div>
+    <div class="cta-actions">
+      <a class="btn primary lg" href="https://svla-agent.streamlit.app/" target="_blank" rel="noopener">Launch live analysis ↗</a>
+      <a class="btn ghost lg" href="https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent" target="_blank" rel="noopener">Source on GitHub ↗</a>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <span id="footer-version"></span>
+  <span>MIT licensed · built by Sapnil Patel</span>
+  <span><a href="https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture</a> · <a href="https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/blob/main/docs/VISION.md" target="_blank" rel="noopener">Vision → delivery</a> · <a href="https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/blob/main/docs/DEPLOYMENT.md" target="_blank" rel="noopener">Deployment</a></span>
+</footer>
+
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+<script src="app.js" defer></script>
+</body>
+</html>

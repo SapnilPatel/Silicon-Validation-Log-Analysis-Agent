@@ -60,14 +60,97 @@ st.set_page_config(page_title="SVLA-Agent", page_icon="🔬", layout="wide")
 # Fixed categorical hue per failure type (colour follows the entity, never its
 # rank), taken from a CVD-validated palette; adjacent slots stay distinguishable.
 TYPE_COLORS: dict[str, str] = {
-    "PCIE_TIMEOUT": "#2a78d6",
-    "DDR_ECC": "#eb6834",
-    "PMU_DROOP": "#1baf7a",
-    "THERMAL_TRIP": "#eda100",
-    "FW_EXCEPTION": "#e87ba4",
-    "NOC_TIMEOUT": "#008300",
-    "UNKNOWN_FAILURE": "#6250d6",
+    "PCIE_TIMEOUT": "#3987e5",
+    "DDR_ECC": "#d95926",
+    "PMU_DROOP": "#199e70",
+    "THERMAL_TRIP": "#c98500",
+    "FW_EXCEPTION": "#d55181",
+    "NOC_TIMEOUT": "#5cb85c",
+    "UNKNOWN_FAILURE": "#9085e9",
 }
+SITE_URL = "https://sapnilpatel.github.io/Silicon-Validation-Log-Analysis-Agent/"
+REPO_URL = "https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent"
+
+_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+html, body, [class*="css"], .stMarkdown, .stText { font-family: 'Inter', system-ui, sans-serif; }
+code, pre, .stCode { font-family: 'JetBrains Mono', ui-monospace, monospace !important; }
+.block-container { padding-top: 1.6rem; max-width: 1240px; }
+.svla-hero { padding: 26px 28px 22px; border-radius: 16px; border: 1px solid #243040;
+  background: radial-gradient(900px 300px at 85% -20%, rgba(57,135,229,.22), transparent 60%),
+              radial-gradient(600px 260px at -5% 110%, rgba(25,158,112,.16), transparent 60%), #11161d; margin-bottom: 18px; }
+.svla-hero .eyebrow { color: #5fa2ff; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: .74rem; margin: 0 0 8px; }
+.svla-hero h1 { font-size: 2rem; font-weight: 800; letter-spacing: -.01em; margin: 0 0 8px; line-height: 1.15; color: #e6edf3; }
+.svla-hero h1 em { font-style: normal; color: #5fa2ff; }
+.svla-hero p { color: #a3b3c6; margin: 0; max-width: 820px; font-size: .98rem; }
+.svla-hero .links { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+.svla-hero .links a { text-decoration: none; font-weight: 600; font-size: .86rem; padding: 6px 12px; border-radius: 9px;
+  border: 1px solid #33455c; color: #e6edf3; background: #171e27; }
+.svla-hero .links a.primary { background: #3987e5; border-color: #3987e5; color: #fff; }
+.svla-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 0; }
+.svla-chip { background: #171e27; border: 1px solid #243040; border-radius: 999px; padding: 5px 11px; font-size: .8rem; color: #a3b3c6; }
+.svla-chip b { color: #e6edf3; font-variant-numeric: tabular-nums; }
+.svla-flow { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: #71839a; margin-top: 12px; }
+.svla-flow b { color: #a3b3c6; font-weight: 500; }
+.svla-note { color: #71839a; font-size: .85rem; }
+div[data-testid="stMetric"] { background: #11161d; border: 1px solid #243040; border-radius: 12px; padding: 12px 14px; }
+div[data-testid="stMetric"] label { color: #a3b3c6 !important; }
+div[data-testid="stExpander"] { border: 1px solid #243040; border-radius: 12px; background: #11161d; }
+.stTabs [data-baseweb="tab-list"] { gap: 6px; }
+.stTabs [data-baseweb="tab"] { padding: 8px 14px; border-radius: 9px 9px 0 0; }
+section[data-testid="stSidebar"] { border-right: 1px solid #243040; }
+</style>
+"""
+
+
+def inject_css() -> None:
+    st.markdown(_CSS, unsafe_allow_html=True)
+
+
+def render_hero(metrics: dict | None, reports: list[dict]) -> None:
+    rc = (metrics or {}).get("root_cause", {})
+    rt = (metrics or {}).get("retrieval", {})
+    n_runs = (metrics or {}).get("n_runs")
+    chips = []
+    if rc.get("accuracy") is not None:
+        chips.append(
+            f"<span class='svla-chip'>root-cause top-1 <b>{rc['accuracy']:.2f}</b> "
+            f"on {rc.get('n', '?')} held-out failures</span>"
+        )
+    if rt.get("recall_at_k") is not None:
+        chips.append(
+            f"<span class='svla-chip'>retrieval recall@{rt.get('k', 5)} <b>{rt['recall_at_k']:.2f}</b></span>"
+        )
+    if n_runs:
+        chips.append(f"<span class='svla-chip'>evaluated on <b>{n_runs}</b> runs</span>")
+    if reports:
+        chips.append(
+            f"<span class='svla-chip'><b>{len(reports)}</b> runs loaded · "
+            f"<b>{sum(r['n_events'] for r in reports):,}</b> events</span>"
+        )
+    st.markdown(
+        f"""
+<div class="svla-hero">
+  <p class="eyebrow">Agentic AI debug assistant · post-silicon validation</p>
+  <h1>From raw silicon test logs to a <em>named root cause</em> with the evidence attached.</h1>
+  <p>SVLA-Agent streams multi-source logs, mines event templates (Drain3), classifies and de-duplicates failures,
+  clusters recurring families (HDBSCAN), retrieves similar historical incidents (RAG) and asks Claude — or a
+  deterministic rule-based agent — to pick the specific root cause and the next experiment to run.
+  PII and secrets are redacted before anything is indexed or prompted.</p>
+  <div class="svla-flow">ingest → parse → <b>redact</b> → classify + dedup → cluster → retrieve → <b>hypothesize</b> → report</div>
+  <div class="svla-chips">{"".join(chips)}</div>
+  <div class="links">
+    <a class="primary" href="{SITE_URL}" target="_blank">Project site &amp; report explorer ↗</a>
+    <a href="{REPO_URL}" target="_blank">Source on GitHub ↗</a>
+    <a href="{REPO_URL}/blob/main/docs/ARCHITECTURE.md" target="_blank">Architecture ↗</a>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 SEVERITY_ICON = {"critical": "🟥", "high": "🟧", "medium": "🟨", "low": "🟦"}
 GRID = "rgba(128,128,128,0.18)"
 
@@ -76,6 +159,15 @@ EXAMPLES = _ROOT / "examples"
 
 def _color(ftype: str) -> str:
     return TYPE_COLORS.get(ftype, TYPE_COLORS["UNKNOWN_FAILURE"])
+
+
+def _dark(fig: go.Figure) -> go.Figure:
+    fig.update_layout(
+        font={"family": "Inter, system-ui, sans-serif", "color": "#a3b3c6"},
+        title_font={"color": "#e6edf3", "size": 15},
+        hoverlabel={"bgcolor": "#0a0e13", "bordercolor": "#33455c", "font": {"color": "#e6edf3"}},
+    )
+    return fig
 
 
 def _bar(
@@ -104,7 +196,7 @@ def _bar(
         yaxis={"autorange": "reversed", "showgrid": False},
         showlegend=False,
     )
-    return fig
+    return _dark(fig)
 
 
 # --------------------------------------------------------------------------- #
@@ -313,7 +405,7 @@ def render_timeline(report: dict, key: str = "detail") -> None:
                 marker={
                     "size": 9,
                     "color": _color(f["failure_type"]),
-                    "line": {"width": 2, "color": "white"},
+                    "line": {"width": 2, "color": "#0b0f14"},
                 },
                 name=f["failure_type"],
                 hovertemplate=f"{f['failure_type']}<br>%{{x:.2f}} s<br>{f['summary'][:80]}<extra></extra>",
@@ -330,7 +422,7 @@ def render_timeline(report: dict, key: str = "detail") -> None:
         showlegend=len(rows) > 1,
         legend={"orientation": "h", "y": -0.35},
     )
-    st.plotly_chart(fig, width="stretch", key=f"{key}-timeline-{report['run_id']}")
+    st.plotly_chart(_dark(fig), width="stretch", key=f"{key}-timeline-{report['run_id']}")
 
 
 def render_run(report: dict, key: str = "detail") -> None:
@@ -535,10 +627,8 @@ def main() -> None:
     settings = get_settings()
     logs_default, labels_default, reports_default = _default_dirs(settings)
 
-    st.title("🔬 SVLA-Agent — Silicon Validation Log Analysis")
-    st.caption(
-        "Parse · classify · cluster · retrieve · hypothesise · report — offline by default, Claude when you want it."
-    )
+    inject_css()
+    st.title("🔬 SVLA-Agent")
 
     with st.sidebar:
         st.header("Data")
@@ -564,11 +654,17 @@ def main() -> None:
     reports = load_reports(reports_dir)
     metrics = load_metrics(reports_dir)
     pipe = get_pipeline(logs_dir, labels_dir, reports_dir)
+    render_hero(metrics, reports)
 
     tabs = st.tabs(
         ["📊 Overview", "🔎 Run detail", "⚡ Live analysis", "📏 Evaluation", "📘 About"]
     )
     with tabs[0]:
+        st.markdown(
+            "<p class='svla-note'>What the pipeline found across every loaded run: how many were anomalous, "
+            "which failure types and root causes dominate, and the recurring families it clustered.</p>",
+            unsafe_allow_html=True,
+        )
         if reports:
             render_overview(reports)
         else:
@@ -576,6 +672,12 @@ def main() -> None:
                 f"No reports found in `{reports_dir}`. Use the Live analysis tab or run `svla process`."
             )
     with tabs[1]:
+        st.markdown(
+            "<p class='svla-note'>One run end to end: device context, where each failure happened in time, the "
+            "redacted evidence the agent saw, its root-cause hypothesis with calibrated confidence, the next "
+            "experiments to run, and the historical incidents it retrieved.</p>",
+            unsafe_allow_html=True,
+        )
         if reports:
             ids = [r["run_id"] for r in reports]
             default = next((i for i, r in enumerate(reports) if r["anomalous"]), 0)
@@ -586,6 +688,11 @@ def main() -> None:
     with tabs[2]:
         render_live(pipe, api_key)
     with tabs[3]:
+        st.markdown(
+            "<p class='svla-note'>How well it works, measured against ground truth. Retrieval and root-cause "
+            "metrics use a hold-out split so a failure can never retrieve itself.</p>",
+            unsafe_allow_html=True,
+        )
         render_metrics(metrics)
     with tabs[4]:
         render_about(pipe)

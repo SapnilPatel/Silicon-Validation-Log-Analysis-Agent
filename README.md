@@ -5,16 +5,17 @@
 **Silicon Validation Log Analysis Agent** — an agentic AI debug assistant for post-silicon validation logs.
 
 [![CI](https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/actions/workflows/ci.yml)
+[![Project site](https://img.shields.io/badge/project%20site-report%20explorer-3987e5?logo=githubpages&logoColor=white)](https://sapnilpatel.github.io/Silicon-Validation-Log-Analysis-Agent/)
 [![Live demo](https://img.shields.io/badge/live%20demo-svla--agent.streamlit.app-FF4B4B?logo=streamlit&logoColor=white)](https://svla-agent.streamlit.app/)
 [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.12-3776AB?logo=python&logoColor=white)](#quickstart)
 [![Claude](https://img.shields.io/badge/LLM-Claude%20opus--5--5-D97757?logo=anthropic&logoColor=white)](#enabling-claude)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-orange)](https://github.com/astral-sh/ruff)
 
-### 🚀 [**Open the live demo → svla-agent.streamlit.app**](https://svla-agent.streamlit.app/)
+### 🌐 [**Project site & report explorer**](https://sapnilpatel.github.io/Silicon-Validation-Log-Analysis-Agent/) &nbsp;·&nbsp; 🚀 [**Live analysis app**](https://svla-agent.streamlit.app/)
 
-Browse analysed runs, open a debug report, run a live analysis, or upload your own logs.<br>
-Paste your own Anthropic key in the sidebar to switch the hypothesis agent to Claude — nothing is stored.
+The project site explains the pipeline, shows the measured results and lets you explore real reports.<br>
+The live app analyses runs on demand and accepts your own logs; paste an Anthropic key in its sidebar to switch the agent to Claude — nothing is stored.
 
 </div>
 
@@ -282,7 +283,7 @@ FastAPI · Streamlit / Plotly · pytest / ruff / mypy · Docker · Streamlit Com
 | Document | Contents |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow, stage responsibilities, schemas, evaluation design |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Streamlit Community Cloud, Docker, Hugging Face, REST API usage |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | GitHub Pages site, Streamlit Community Cloud, Docker, Hugging Face, REST API usage |
 | [docs/VISION.md](docs/VISION.md) | Every original project goal and how it was delivered |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, conventions, how to add backends / root causes |
 

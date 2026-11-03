@@ -39,3 +39,4 @@ coverage.xml
 .DS_Store
 .idea/
 .vscode/
+site/data/
