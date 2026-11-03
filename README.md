@@ -146,19 +146,33 @@ and root-cause metrics use a **hold-out split**: the RAG index is built from 70%
 of the runs and the remaining 30% are analysed as *new* incidents, so a failure
 can never retrieve itself.
 
-Results on a 400-run synthetic corpus (166 failures, 52 held out), rule-based
-agent, no API key:
+Results on a 400-run synthetic corpus (166 failures, 52 held out). The LLM column
+uses Claude `claude-opus-5-5` as the hypothesis agent; the other two use the
+deterministic rule-based agent with transformer or hashing embeddings:
 
-| Metric | sentence-transformers | hashing (offline) |
-|---|---|---|
-| Anomaly detection P / R / F1 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
-| Failure typing (micro) P / R / F1 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
-| Cluster purity vs. failure type | 1.00 | 1.00 |
-| Cluster homogeneity vs. root cause | 0.91 | 0.91 |
-| Retrieval recall@5 (same type) / MRR | 1.00 / 1.00 | 1.00 / 1.00 |
-| Retrieval recall@5 (same root cause) | 0.98 | 0.92 |
-| **Root-cause top-1 accuracy** | **0.96** | **0.92** |
-| Mean confidence when right / wrong | 0.92 / 0.77 | 0.92 / 0.77 |
+| Metric | Claude agent | Rule-based (sentence-transformers) | Rule-based (hashing, offline) |
+|---|---|---|---|
+| Anomaly detection P / R / F1 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
+| Failure typing (micro) P / R / F1 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
+| Cluster purity vs. failure type | 1.00 | 1.00 | 1.00 |
+| Cluster homogeneity vs. root cause | 0.91 | 0.91 | 0.91 |
+| Retrieval recall@5 (same type) / MRR | 1.00 / 1.00 | 1.00 / 1.00 | 1.00 / 1.00 |
+| Retrieval recall@5 (same root cause) | 0.98 | 0.98 | 0.92 |
+| **Root-cause top-1 accuracy** | **0.94** (49/52) | **0.96** (50/52) | **0.92** (48/52) |
+| Mean confidence when right / **wrong** | 0.82 / **0.47** | 0.92 / 0.77 | 0.92 / 0.77 |
+
+Two things stand out. The rule-based agent is on par with Claude at naming the
+exact root cause, because the catalogue markers are strong signal on this
+corpus. Claude is much better **calibrated**: when it is wrong its confidence
+drops to 0.47, versus 0.77 for the rules, so its confidence is actually usable
+for triage. Claude's hypotheses also quote the concrete evidence (fan at 1537
+vs 4014 rpm, lane 5 eye width 0.24 UI against 0.30 required) and propose
+specific experiments rather than a playbook. Cost: one short tool call per
+failure, roughly 15 s and about a cent each on `claude-opus-5-5`.
+
+Throughput on a laptop (Apple Silicon, single process): the 100-run corpus is
+97 MB / 1.45 M log events across 700 files, parsed, template-mined and
+classified in 23 s, about 64 k events/s, streaming so memory stays flat.
 
 What these numbers mean, honestly: the corpus is synthetic. Every injected
 failure leaves a root-cause tell-tale in the logs **90% of the time**; the rest
@@ -171,6 +185,7 @@ candidates → calibrated confidence → actions) that carries over. Reproduce w
 ```bash
 svla generate --runs 400 --out-logs data/eval/logs --out-labels data/eval/labels --seed 777000
 svla eval --logs data/eval/logs --labels data/eval/labels --out reports/metrics.json
+# with ANTHROPIC_API_KEY set, the same command scores Claude as the agent
 ```
 
 ---

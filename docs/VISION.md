@@ -29,8 +29,9 @@ This page tracks each promise against what the repository actually ships.
   the generator's ground truth, not against real silicon logs. Every root cause
   leaves a tell-tale line 90% of the time; the remaining 10% exercises the
   retrieval/prior fallback.
-- The LLM path is validated with a fake provider in tests and manually; CI runs
-  offline and never calls Claude.
+- CI runs offline and never calls Claude; the LLM path is covered by a fake
+  provider in tests and was validated against the real API (`claude-opus-5-5`)
+  on the 400-run hold-out set - see the README's evaluation table.
 
 ---
 
