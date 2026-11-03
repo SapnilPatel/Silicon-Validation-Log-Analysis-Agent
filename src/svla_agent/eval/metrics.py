@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from sklearn.metrics import (
@@ -278,7 +279,7 @@ def holdout_evaluation(
         test_failures, store, k=k, rc_truth=rc_map, indexed_types=indexed_types
     )
 
-    cache: dict[str, dict] = {}
+    cache: dict[str, Any] = {}
     cache_file = Path(cache_path) if cache_path else None
     if cache_file and cache_file.exists():
         try:
