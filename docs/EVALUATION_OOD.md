@@ -38,19 +38,20 @@ svla eval --logs data/bgl/silicon_logs --labels data/bgl/labels --out reports/me
 2,906 windows, 633 anomalous; 1,249 failures classified; 968 windows held out
 (442 failures, 296 with an alert label).
 
-| Metric | hashing embeddings |
-|---|:---:|
-| Window anomaly detection precision / recall / F1 | 0.64 / 1.00 / 0.78 |
-| Retrieval recall@5 (same component type) / MRR | 0.99 / 0.99 |
-| Retrieval recall@5 (same alert tag) | 0.84 |
-| **Alert tag named by retrieval alone, top-1** | **0.71** (210/296) |
-| Mean confidence when right / wrong | 0.76 / 0.59 |
-| Cluster purity vs. alert tag | 0.82 |
-| Parse coverage (lines matched by the BGL reader) | 100% (0 unparsed) |
+| Metric | transformer embeddings | hashing embeddings (offline) |
+|---|:---:|:---:|
+| Window anomaly detection precision / recall / F1 | 0.64 / 1.00 / 0.78 | 0.64 / 1.00 / 0.78 |
+| Retrieval recall@5 (same component type) / MRR | 1.00 / 1.00 | 0.99 / 0.99 |
+| Retrieval recall@5 (same alert tag) | 0.86 | 0.84 |
+| **Alert tag named by retrieval alone, top-1** | **0.77** (229/296) | **0.71** (210/296) |
+| Mean confidence when right / wrong | 0.77 / 0.60 | 0.76 / 0.59 |
+| Cluster purity vs. alert tag | 0.82 | 0.82 |
+| Parse coverage (lines matched by the BGL reader) | 100% (0 unparsed) | 100% |
 
-Per alert family (top-1 by retrieval): `APP` 0.92 (58/63), `KERNEL` 0.75
-(140/187), `MONITOR` 0.67 (2/3), `BGLMASTER` 0.56 (5/9), `LINKCARD` 0.40 (2/5),
-`HARDWARE` 0.17 (1/6), `MMCS` 0.17 (1/6), `DISCOVERY` 0.06 (1/17).
+Per alert family, top-1 by retrieval (transformer embeddings): `APP` 0.92
+(58/63), `KERNEL` 0.83 (156/187), `MMCS` 0.67 (4/6), `MONITOR` 0.67 (2/3),
+`BGLMASTER` 0.56 (5/9), `LINKCARD` 0.40 (2/5), `HARDWARE` 0.17 (1/6),
+`DISCOVERY` 0.06 (1/17).
 
 ## What this says
 
@@ -62,13 +63,13 @@ Per alert family (top-1 by retrieval): `APP` 0.92 (58/63), `KERNEL` 0.75
   detector on top of the templates, which the synthetic corpus could never
   motivate because there it is already perfect.
 - **Retrieval is the part that generalises.** With zero domain knowledge, the
-  nearest past windows name the operators' alert tag 71% of the time overall
-  and 92% for application alerts. Where it fails, the component has few
+  nearest past windows name the operators' alert tag 77% of the time overall
+  (71% with the dependency-free hashing embeddings) and 92% for application alerts. Where it fails, the component has few
   examples (`DISCOVERY`, `HARDWARE`, `MMCS`: 6–17 held-out cases each) — a data
   problem, not a method problem.
 - **Clusters are mostly tag-pure (0.82)** even though they were formed with no
   knowledge of the tags, which supports using families as triage buckets.
-- **Confidence still separates right from wrong** (0.76 vs 0.59), though less
+- **Confidence still separates right from wrong** (0.77 vs 0.60), though less
   sharply than on the synthetic corpus; a catalogue-free setting leaves only
   retrieval agreement to go on.
 - **Failure-type scores are not reported.** BGL's alert taxonomy does not
