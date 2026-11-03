@@ -69,15 +69,15 @@
     {
       "failure_id": "000021:NOC_TIMEOUT",
       "cluster_id": 2,
-      "root_cause": "Interconnect transaction timed out under fabric congestion: Dependency cycle across fabric routes causes a deadlock",
+      "root_cause": "A dependency cycle on NoC ring R1 (around the PCIE<->DDR routes) deadlocked the fabric, so the DMA->PCIE transaction 0xE470 timed out and the interconnect failed.",
       "root_cause_id": "RC_NOC_DEADLOCK",
-      "confidence": 0.83,
-      "rationale": "Sustained high transaction-queue occupancy and stalls precede a transaction timeout and interconnect failure, suggesting QoS starvation or a potential deadlock on a congested route. Evidence contains the tell-tale(s) 'dependency cycle suspected', 'cycle' for RC_NOC_DEADLOCK.",
+      "confidence": 0.62,
+      "rationale": "The first warning in the run is 'NOC: WARN: Dependency cycle suspected | ring=R1 members=2' at 3921 ms. This is the catalogue's tell-tale for RC_NOC_DEADLOCK. It is followed by repeated congestion warnings (txn_q=high, stall_pct 26-33%) on PCIE<->DDR and CPU<->DDR up to 4388 ms. The DMA->PCIE timeout comes at 4738 ms and the fatal error at 4799 ms. Nothing in the logs points to QoS starvation (no credits=0 or credit-starvation lines) or DMA burst overflow (no burst_len lines), even though the two most similar past incidents had those causes. Points against: fabric stall had dropped to 1-13% in the last 250 ms before the timeout, which doesn't fit a fabric-wide deadlock unless the stuck flows stayed confined to ring R1. PCIe retrain count also climbed steadily (41->44 in about 150 ms) on the destination link. A flaky PCIe link could be causing or adding to the timeout, so confidence is moderate. The register dump is raw hex and I couldn't decode it.",
       "recommended_actions": [
-        "Inspect the route table for cyclic dependencies",
-        "Enable deadlock-recovery timeouts on the affected ring",
-        "Review NoC QoS/arbitration weights for the starved initiator",
-        "Check for dependency cycles / deadlock on the congested route"
+        "Decode the NOC0 register snapshot and check the R1 ring route table for a cyclic channel dependency between the 2 members (PCIE<->DDR paths)",
+        "Enable deadlock-recovery / escape-VC timeouts on ring R1 and rerun the same traffic to see if the timeout goes away",
+        "Rule out the PCIe link: pin the link at a lower gen or turn off ASPM, track LTSSM retrain events, and check whether the retrain count rising lines up with the DMA->PCIE stalls",
+        "Rerun with DMA->PCIE traffic isolated from CPU/DDR traffic to confirm the failure needs the cross-route dependency"
       ],
       "supporting_evidence": [
         "[00:00:03.921] NOC: WARN: Dependency cycle suspected | ring=R1 members=2",
@@ -129,8 +129,62 @@
           "distance": 0.6342806816101074
         }
       ],
-      "source": "rule-based"
+      "source": "llm:claude-opus-5-5:agentic",
+      "trace": [
+        {
+          "step": 1,
+          "tool": "lookup_catalogue",
+          "input": {},
+          "output": "Prior for NOC_TIMEOUT: Interconnect transaction timed out under fabric congestion\nSustained high transaction-queue occupancy and stalls precede a transaction timeout and interconnect failure, suggesting QoS starvation or a potential deadlock on a congested route.\n\n- RC_NOC_QOS_STARVATION: A low-priority initiator is starved of QoS credits\n    tell-tales: qos credit starvation, credits=0\n    actions: Rebalance QoS weights / credits for the starved initiator; Enable age-based arbitration on the congested link\n- RC_NOC_DEADLOCK: Dependency cycle across fabric routes causes a deadlock\n    tell-tales: dependency cycle suspected, cycle\n    actions: Inspect the route table for cyclic dependencies; Enable deadlock-recovery timeouts on the affected ring\n- RC_DMA_BURST_OVERFLOW: DMA burst length overflows the fabric buffers\n    tell-tales: dma burst overflow, burst_len\n    actions: Reduce the DMA burst length or add outstanding-transaction limits; Verify buffer depth on the DMA->DDR path",
+          "note": ""
+        },
+        {
+          "step": 2,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 4500,
+            "end_ms": 4799,
+            "include_info": true,
+            "subsystem": ""
+          },
+          "output": "[00:00:04.506] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=41 aer=0\n[00:00:04.515] THERMAL: INFO: Temp sample | t_c=76 sensor=0\n[00:00:04.520] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.526] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.541] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=13\n[00:00:04.554] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=4\n[00:00:04.568] THERMAL: INFO: Temp sample | t_c=77 sensor=2\n[00:00:04.573] THERMAL: INFO: Temp sample | t_c=75 sensor=3\n[00:00:04.576] FW: INFO: Heartbeat | i=518\n[00:00:04.591] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.604] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=43 aer=0\n[00:00:04.609] THERMAL: INFO: Temp sample | t_c=77 sensor=2\n[00:00:04.623] THERMAL: INFO: Temp sample | t_c=74 sensor=2\n[00:00:04.636] PMU: INFO: Rail telemetry | rail=VCORE mv=884 i_ma=680 droop_cnt=0\n[00:00:04.637] DDR: INFO: DDR counters | ecc_corr=87 ecc_ue=0 rd_lat_ns=83\n[00:00:04.643] PMU: INFO: Rail telemetry | rail=VCORE mv=924 i_ma=589 droop_cnt=0\n[00:00:04.647] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=9\n[00:00:04.658] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=43 aer=0\n[00:00:04.660] PMU: INFO: Rail telemetry | rail=VCORE mv=881 i_ma=382 droop_cnt=0\n[00:00:04.662] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=44 aer=0\n[00:00:04.667] THERMAL: INFO: Temp sample | t_c=75 sensor=3\n[00:00:04.680] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "read_block",
+          "input": {
+            "ts_ms": 4780
+          },
+          "output": "[00:00:04.780] NOC: ERROR: NoC error register snapshot | fabric=NOC0\nREG_DUMP_BEGIN\n60000E59: FBC366BE\n60000E5D: 325B0F3C\n60000E61: 65F0707A\n60000E65: 0A52663A\n60000E69: 8B9C5613\n60000E6D: 50B1FC8C\n60000E71: CE9A344F\n60000E75: 2D7839DE\n60000E79: 39781F7F\n60000E7D: 8CCE24D6\n60000E81: CA46AF08\n60000E85: ACBE1C14\n60000E89: 3C45BC93\n60000E8D: 7EB65F0C\n60000E91: 7A052764\n60000E95: 2B074DEA\n60000E99: 1DF24580\n60000E9D: 6A945D05\n60000EA1: F7B6585A\n60000EA5: 0AD6897B\nREG_DUMP_END",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 4500,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:03.921] NOC: WARN: Dependency cycle suspected | ring=R1 members=2\n[00:00:03.929] NOC: WARN: Fabric congestion | txn_q=high stall_pct=33 region=PCIE<->DDR\n[00:00:04.055] NOC: WARN: Fabric congestion | txn_q=high stall_pct=30 region=CPU<->DDR\n[00:00:04.159] NOC: WARN: Fabric congestion | txn_q=high stall_pct=28 region=PCIE<->DDR\n[00:00:04.308] NOC: WARN: Fabric congestion | txn_q=high stall_pct=31 region=PCIE<->DDR\n[00:00:04.388] NOC: WARN: Fabric congestion | txn_q=high stall_pct=26 region=CPU<->DDR",
+          "note": ""
+        },
+        {
+          "step": 5,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 400,
+            "include_info": true,
+            "subsystem": "PCIE"
+          },
+          "output": "[00:00:00.298] PCIE: INFO: Controller reset | gen=4 lanes=x4\n[00:00:00.325] PCIE: INFO: LTSSM -> Detect | lane=0\n[00:00:00.371] PCIE: INFO: Link up | width=x4 speed=32GT/s",
+          "note": ""
+        }
+      ]
     }
   ],
-  "generated_at": "2026-11-02T23:22:00+00:00"
+  "generated_at": "2026-11-03T23:25:30+00:00"
 }

@@ -69,15 +69,15 @@
     {
       "failure_id": "000018:THERMAL_TRIP",
       "cluster_id": 5,
-      "root_cause": "Junction temperature exceeded the thermal trip threshold: Poor heatsink/TIM contact — large die-to-ambient delta",
+      "root_cause": "Poor heatsink/TIM contact left a large die-to-ambient thermal resistance, so even after the DVFS step-down the junction temperature jumped past the 105 °C trip point.",
       "root_cause_id": "RC_HEATSINK_POOR",
-      "confidence": 0.83,
-      "rationale": "Temperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload. Evidence contains the tell-tale(s) 'sensor-to-ambient delta high', 'delta_c' for RC_HEATSINK_POOR.",
+      "confidence": 0.72,
+      "rationale": "The only evidence marker in the run is the heatsink tell-tale: 'Sensor-to-ambient delta high | delta_c=71' at 291 ms, logged right after 'Temperature high' (95 °C). The full log has no 'Power burst detected' or 'p_w=' lines, which rules against RC_WORKLOAD_BURST, even though the two closest past incidents (000015 and 000020) were bursts and both had a PMU burst line. It also has no 'Fan speed below profile' line, which rules against RC_FAN_PROFILE_BAD. The DVFS step-down at 461 ms (800 to 600 MHz) held the sensors at 93–97 °C, but cooling could not hold, and t_c=115 was reached at 831 ms. That points to a cooling shortfall rather than extra power. Two things lower my confidence: the logged ambient_c=95 together with delta_c=71 is not physically consistent, so the fields may be mislabelled; and there was a sudden jump from 96 °C at 731 ms to 115 °C at 831 ms with no PMU INFO checked in that gap.",
       "recommended_actions": [
-        "Re-seat the heatsink and replace the TIM",
-        "Measure mounting pressure against the thermal spec",
-        "Inspect heatsink mounting/TIM and airflow on the DUT",
-        "Make the fan/DVFS profile more aggressive ahead of the trip point"
+        "Re-seat the heatsink and replace the TIM, then rerun the same workload and compare the die-to-ambient delta (should drop well below 71 C)",
+        "Measure heatsink mounting pressure and flatness against the thermal spec",
+        "Verify ambient/delta sensor field mapping in the THERMAL logger (ambient_c=95 looks mislabelled) and check PMU INFO telemetry 731-831 ms to exclude an unlogged power step",
+        "Cross-check fan tach readings during the run to confirm the fan met its profile"
       ],
       "supporting_evidence": [
         "[00:00:00.256] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS",
@@ -128,8 +128,51 @@
           "distance": 0.6517153978347778
         }
       ],
-      "source": "rule-based"
+      "source": "llm:claude-opus-5-5:agentic",
+      "trace": [
+        {
+          "step": 1,
+          "tool": "lookup_catalogue",
+          "input": {},
+          "output": "Prior for THERMAL_TRIP: Junction temperature exceeded the thermal trip threshold\nTemperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload.\n\n- RC_HEATSINK_POOR: Poor heatsink/TIM contact — large die-to-ambient delta\n    tell-tales: sensor-to-ambient delta high, delta_c\n    actions: Re-seat the heatsink and replace the TIM; Measure mounting pressure against the thermal spec\n- RC_FAN_PROFILE_BAD: Fan speed stays below the profile target as temperature rises\n    tell-tales: fan speed below profile, target_rpm\n    actions: Fix the fan curve / PWM mapping in the thermal policy; Verify tachometer feedback and fan power\n- RC_WORKLOAD_BURST: A sustained power burst outruns the cooling headroom\n    tell-tales: power burst detected, p_w=\n    actions: Cap the burst power or lengthen the DVFS step-down reaction; Add thermal headroom to the test's power envelope",
+          "note": ""
+        },
+        {
+          "step": 2,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 844,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:00.256] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS\n[00:00:00.291] THERMAL: WARN: Sensor-to-ambient delta high | delta_c=71 ambient_c=95\n[00:00:00.461] FW: WARN: DVFS step-down | clk_mhz=800 next_clk_mhz=600\n[00:00:00.831] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=115 threshold_c=105\n[00:00:00.844] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 844,
+            "include_info": true,
+            "subsystem": "THERMAL"
+          },
+          "output": "[00:00:00.256] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS\n[00:00:00.291] THERMAL: WARN: Sensor-to-ambient delta high | delta_c=71 ambient_c=95\n[00:00:00.421] THERMAL: INFO: Temp sample | t_c=94 sensor=2\n[00:00:00.422] THERMAL: INFO: Temp sample | t_c=97 sensor=3\n[00:00:00.439] THERMAL: INFO: Temp sample | t_c=97 sensor=3\n[00:00:00.525] THERMAL: INFO: Temp sample | t_c=94 sensor=2\n[00:00:00.540] THERMAL: INFO: Temp sample | t_c=95 sensor=1\n[00:00:00.626] THERMAL: INFO: Temp sample | t_c=96 sensor=3\n[00:00:00.650] THERMAL: INFO: Temp sample | t_c=96 sensor=1\n[00:00:00.675] THERMAL: INFO: Temp sample | t_c=97 sensor=2\n[00:00:00.691] THERMAL: INFO: Temp sample | t_c=93 sensor=2\n[00:00:00.731] THERMAL: INFO: Temp sample | t_c=96 sensor=3\n[00:00:00.831] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=115 threshold_c=105",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "search_incidents",
+          "input": {
+            "query": "Sensor-to-ambient delta high delta_c",
+            "top_k": 5
+          },
+          "output": "- run 000016 | DDR_ECC | root_cause=RC_DDR_TIMING_VIOLATION | similarity=0.2666\n    DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: Timing parameter violation ; DDR: Read retry invoke\n- run 000000 | DDR_ECC | root_cause=RC_DDR_CDC_GLITCH | similarity=0.2564\n    DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: CDC synchronizer glitch ; DDR: Read retry invoked\n- run 000015 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.2374\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down\n- run 000020 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.2351\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power \n- run 000001 | THERMAL_TRIP | root_cause=RC_FAN_PROFILE_BAD | similarity=0.1893\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step",
+          "note": ""
+        }
+      ]
     }
   ],
-  "generated_at": "2026-11-02T23:22:00+00:00"
+  "generated_at": "2026-11-03T23:24:22+00:00"
 }

@@ -111,15 +111,15 @@
     {
       "failure_id": "000020:FW_EXCEPTION",
       "cluster_id": 1,
-      "root_cause": "Firmware crashed on an unhandled CPU exception (fault handler): Task stack overflow corrupts the return frame",
+      "root_cause": "The main_loop task overflowed its stack and corrupted its return frame, so it faulted (BusFault escalated to HardFault) and firmware 0.9.14 crashed.",
       "root_cause_id": "RC_FW_STACK_OVERFLOW",
-      "confidence": 0.83,
-      "rationale": "Null-pointer guard and service retries precede an unhandled HardFault/BusFault with a stack trace, indicating a firmware logic defect (race or bad deref) rather than a hardware fault. Evidence contains the tell-tale(s) 'stack watermark exceeded', 'used_pct' for RC_FW_STACK_OVERFLOW.",
+      "confidence": 0.8,
+      "rationale": "At 1375 ms, 135 ms before the fault, the log shows 'Stack watermark exceeded | task=main_loop used_pct=100'. That is the catalogue's tell-tale for stack overflow. The top frame of the backtrace (#00) is main_loop+0xC7, the same task. The register dump looks like a corrupted frame: LR=0xADEBF6E5 is a garbage value, SP=0xD3BBE5AE is not word-aligned, and the backtrace jumps between unrelated functions (ddr_isr, pcie_service, noc_worker, timer_cb). The other catalogue causes fit poorly. For null dereference, the null-guard pointer was 0x1024E865, which is not near null, and there is no dfar=0x0000. For a race, there is no mutex contention timeout or lock= marker. The noc_worker retry looks like a side effect, not the cause. The historical matches are hardware or thermal failure types and don't apply here.",
       "recommended_actions": [
-        "Increase the task stack or reduce frame size in the hot path",
-        "Enable stack-canary checks in the debug build",
-        "Symbolicate the captured backtrace and inspect the faulting frame",
-        "Audit the retried service path for races / null dereferences"
+        "Increase the main_loop task stack (e.g. 2x) and rerun the same workload to see whether the crash goes away",
+        "Turn on stack-canary/MPU stack guard checks in a debug build so the overflow is caught at the point it happens",
+        "Get the worst-case stack depth of main_loop (call-graph analysis, -fstack-usage) and cut large local frames or recursion in the hot path",
+        "Symbolicate PC=0x0C0A21F4 and main_loop+0xC7 to confirm the faulting function epilogue/return"
       ],
       "supporting_evidence": [
         "[00:00:01.340] FW: WARN: Null pointer guard triggered | ptr=0x1024E865",
@@ -171,20 +171,50 @@
           "distance": 0.6429239511489868
         }
       ],
-      "source": "rule-based"
+      "source": "llm:claude-opus-5-5:agentic",
+      "trace": [
+        {
+          "step": 1,
+          "tool": "lookup_catalogue",
+          "input": {},
+          "output": "Prior for FW_EXCEPTION: Firmware crashed on an unhandled CPU exception (fault handler)\nNull-pointer guard and service retries precede an unhandled HardFault/BusFault with a stack trace, indicating a firmware logic defect (race or bad deref) rather than a hardware fault.\n\n- RC_FW_RACE_CONDITION: Race between service threads on a shared lock\n    tell-tales: mutex contention timeout, lock=\n    actions: Audit lock ordering in the contended service path; Add a watchdog-visible trace around the critical section\n- RC_FW_NULL_DEREF: Null-pointer dereference in a service handler\n    tell-tales: fault address near null, dfar=0x0000\n    actions: Symbolicate the faulting PC and add a null guard; Fuzz the service call path with uninitialised arguments\n- RC_FW_STACK_OVERFLOW: Task stack overflow corrupts the return frame\n    tell-tales: stack watermark exceeded, used_pct\n    actions: Increase the task stack or reduce frame size in the hot path; Enable stack-canary checks in the debug build",
+          "note": ""
+        },
+        {
+          "step": 2,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 1300,
+            "end_ms": 1540,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:01.340] FW: WARN: Null pointer guard triggered | ptr=0x1024E865\n[00:00:01.375] FW: WARN: Stack watermark exceeded | task=main_loop used_pct=100\n[00:00:01.384] FW: WARN: Retrying service call | svc=noc_worker attempt=1/3\n[00:00:01.510] FW: ERROR: Unhandled exception | vector=BusFault core=0\n[00:00:01.540] SYSTEM: FATAL: Firmware crash | reason=FW_EXCEPTION fw_version=0.9.14",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "read_block",
+          "input": {
+            "ts_ms": 1510
+          },
+          "output": "[00:00:01.510] FW: ERROR: Unhandled exception | vector=BusFault core=0\nEXC: HardFault\nPC=0x0C0A21F4 LR=0xADEBF6E5 SP=0xD3BBE5AE PSR=0x0139DE4B\nBacktrace:\n  #00  0x8606E9B5  main_loop+0xC7\n  #01  0x570A6A06  ddr_isr+0x6F\n  #02  0x2DE48F05  pcie_service+0x7D\n  #03  0x721E7461  pcie_service+0x13\n  #04  0x3D28DEA9  ddr_isr+0x07\n  #05  0x03B4301C  noc_worker+0x25\n  #06  0x4DB3C5C8  timer_cb+0x8F",
+          "note": ""
+        }
+      ]
     },
     {
       "failure_id": "000020:THERMAL_TRIP",
       "cluster_id": 5,
-      "root_cause": "Junction temperature exceeded the thermal trip threshold: A sustained power burst outruns the cooling headroom",
+      "root_cause": "A sustained 39 W power burst lasting 846 ms used up the thermal headroom of a die already running at 93–97 °C, and the late DVFS step-down from 1000 to 800 MHz could not stop the trip at 105 °C.",
       "root_cause_id": "RC_WORKLOAD_BURST",
-      "confidence": 0.87,
-      "rationale": "Temperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload. Evidence contains the tell-tale(s) 'power burst detected', 'p_w=' for RC_WORKLOAD_BURST. 1 of 3 similar historical incidents (runs 000015) were resolved as RC_WORKLOAD_BURST.",
+      "confidence": 0.55,
+      "rationale": "The only catalogue marker in the run is the workload-burst one: PMU \"Power burst detected p_w=39 dur_ms=846\" at 2513 ms, 33 ms after the \"Temperature high t_c=95 policy=DVFS\" warning. The DVFS step-down came 279 ms after the burst started (2792 ms). There are no fan markers (fan speed below profile, target_rpm) and no heatsink markers (high sensor-to-ambient delta_c), so RC_FAN_PROFILE_BAD and RC_HEATSINK_POOR have no support. VCORE stayed at 925–975 mV with droop_cnt=0, which rules out RC_REGULATOR_LIMIT. Two things lower my confidence. (1) Every sensor reads 93–97 °C right up to 3032 ms (93 °C), then the trip reports 117 °C at 3036 ms. A 24 °C rise in 4 ms is not physically plausible, so this could be a sensor or ADC glitch, or a single hot spot that the sampled sensors don't see. (2) Earlier in the same run, the firmware crashed at 1540 ms (stack watermark 100%, BusFault; this is the separate FW_EXCEPTION / RC_FW_STACK_OVERFLOW incident). That crash may have left the thermal or DVFS policy degraded and slowed throttling. Historical match: run 000015 (THERMAL_TRIP caused by RC_WORKLOAD_BURST, similarity 0.93).",
       "recommended_actions": [
-        "Cap the burst power or lengthen the DVFS step-down reaction",
-        "Add thermal headroom to the test's power envelope",
-        "Inspect heatsink mounting/TIM and airflow on the DUT",
-        "Make the fan/DVFS profile more aggressive ahead of the trip point"
+        "Re-run the same workload with the burst power capped (or the DVFS step-down triggered earlier, e.g. at 90 °C or within 50 ms of a burst) and check whether the trip goes away.",
+        "Capture the raw thermal-sensor ADC stream at high rate around the trip point, and compare the trip sensor with the others, to confirm whether the 93→117 °C jump in 4 ms is real heating or a spurious reading.",
+        "Repeat on a clean boot without the 1.5 s firmware crash (fix the main_loop stack overflow) to rule out a degraded thermal/DVFS control loop after the crash.",
+        "Log fan RPM against target and die-to-ambient delta during the burst to formally exclude the fan-profile and heatsink causes."
       ],
       "supporting_evidence": [
         "[00:00:01.340] FW: WARN: Null pointer guard triggered | ptr=0x1024E865",
@@ -238,8 +268,53 @@
           "distance": 0.46948474645614624
         }
       ],
-      "source": "rule-based"
+      "source": "llm:claude-opus-5-5:agentic",
+      "trace": [
+        {
+          "step": 1,
+          "tool": "lookup_catalogue",
+          "input": {},
+          "output": "Prior for THERMAL_TRIP: Junction temperature exceeded the thermal trip threshold\nTemperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload.\n\n- RC_HEATSINK_POOR: Poor heatsink/TIM contact — large die-to-ambient delta\n    tell-tales: sensor-to-ambient delta high, delta_c\n    actions: Re-seat the heatsink and replace the TIM; Measure mounting pressure against the thermal spec\n- RC_FAN_PROFILE_BAD: Fan speed stays below the profile target as temperature rises\n    tell-tales: fan speed below profile, target_rpm\n    actions: Fix the fan curve / PWM mapping in the thermal policy; Verify tachometer feedback and fan power\n- RC_WORKLOAD_BURST: A sustained power burst outruns the cooling headroom\n    tell-tales: power burst detected, p_w=\n    actions: Cap the burst power or lengthen the DVFS step-down reaction; Add thermal headroom to the test's power envelope",
+          "note": ""
+        },
+        {
+          "step": 2,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 2000,
+            "end_ms": 3048,
+            "include_info": true,
+            "subsystem": ""
+          },
+          "output": "[00:00:02.010] FW: INFO: Loop tick | i=201\n[00:00:02.018] PCIE: INFO: Link stats | gen=3 lanes=x16 retrain=12 aer=0\n[00:00:02.022] DDR: INFO: DDR counters | ecc_corr=32 ecc_ue=0 rd_lat_ns=80\n[00:00:02.034] NOC: INFO: Fabric telemetry | txn_q=high stall_pct=12\n[00:00:02.043] PMU: INFO: Rail telemetry | rail=VCORE mv=975 i_ma=1202 droop_cnt=0\n[00:00:02.049] DDR: INFO: DDR counters | ecc_corr=34 ecc_ue=0 rd_lat_ns=81\n[00:00:02.051] THERMAL: INFO: Temp sample | t_c=97 sensor=1\n[00:00:02.055] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=14\n[00:00:02.056] THERMAL: INFO: Temp sample | t_c=94 sensor=1\n[00:00:02.062] DDR: INFO: DDR counters | ecc_corr=34 ecc_ue=0 rd_lat_ns=74\n[00:00:02.069] PMU: INFO: Rail telemetry | rail=VCORE mv=925 i_ma=1377 droop_cnt=0\n[00:00:02.071] DDR: INFO: DDR counters | ecc_corr=34 ecc_ue=0 rd_lat_ns=75\n[00:00:02.083] THERMAL: INFO: Temp sample | t_c=96 sensor=0\n[00:00:02.097] DDR: INFO: DDR counters | ecc_corr=36 ecc_ue=0 rd_lat_ns=74\n[00:00:02.103] DDR: INFO: DDR counters | ecc_corr=38 ecc_ue=0 rd_lat_ns=82\n[00:00:02.104] FW: INFO: Checkpoint | i=216\n[00:00:02.107] PCIE: INFO: Link stats | gen=3 lanes=x16 retrain=13 aer=0\n[00:00:02.121] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=11\n[00:00:02.133] DDR: INFO: DDR counters | ecc_corr=39 ecc_ue=0 rd_lat_ns=76\n[00:00:02.144] THERMAL: INFO: Temp sample | t_c=94 sensor=3\n[00:00:02.153] PMU: INFO: Rail telemetry | rail=VCORE mv=927 i_ma=1049 droop_cnt=0\n[00:00:02.156] NOC: INFO: Fabric telemetry | txn",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 3121,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:01.340] FW: WARN: Null pointer guard triggered | ptr=0x1024E865\n[00:00:01.375] FW: WARN: Stack watermark exceeded | task=main_loop used_pct=100\n[00:00:01.384] FW: WARN: Retrying service call | svc=noc_worker attempt=1/3\n[00:00:01.510] FW: ERROR: Unhandled exception | vector=BusFault core=0\n[00:00:01.540] SYSTEM: FATAL: Firmware crash | reason=FW_EXCEPTION fw_version=0.9.14\n[00:00:02.480] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS\n[00:00:02.513] PMU: WARN: Power burst detected | p_w=39 dur_ms=846\n[00:00:02.792] FW: WARN: DVFS step-down | clk_mhz=1000 next_clk_mhz=800\n[00:00:03.036] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=117 threshold_c=105\n[00:00:03.048] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 2685,
+            "end_ms": 3040,
+            "include_info": true,
+            "subsystem": "THERMAL"
+          },
+          "output": "[00:00:02.722] THERMAL: INFO: Temp sample | t_c=96 sensor=3\n[00:00:02.765] THERMAL: INFO: Temp sample | t_c=95 sensor=3\n[00:00:02.779] THERMAL: INFO: Temp sample | t_c=95 sensor=3\n[00:00:02.797] THERMAL: INFO: Temp sample | t_c=97 sensor=3\n[00:00:02.818] THERMAL: INFO: Temp sample | t_c=94 sensor=2\n[00:00:02.879] THERMAL: INFO: Temp sample | t_c=95 sensor=1\n[00:00:02.935] THERMAL: INFO: Temp sample | t_c=95 sensor=0\n[00:00:02.948] THERMAL: INFO: Temp sample | t_c=95 sensor=2\n[00:00:02.950] THERMAL: INFO: Temp sample | t_c=95 sensor=1\n[00:00:02.967] THERMAL: INFO: Temp sample | t_c=96 sensor=0\n[00:00:02.988] THERMAL: INFO: Temp sample | t_c=95 sensor=3\n[00:00:02.994] THERMAL: INFO: Temp sample | t_c=97 sensor=0\n[00:00:02.998] THERMAL: INFO: Temp sample | t_c=93 sensor=1\n[00:00:03.032] THERMAL: INFO: Temp sample | t_c=93 sensor=3\n[00:00:03.036] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=117 threshold_c=105",
+          "note": ""
+        }
+      ]
     }
   ],
-  "generated_at": "2026-11-02T23:22:00+00:00"
+  "generated_at": "2026-11-03T23:25:09+00:00"
 }

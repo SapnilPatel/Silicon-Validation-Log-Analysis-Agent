@@ -69,15 +69,15 @@
     {
       "failure_id": "000010:NOC_TIMEOUT",
       "cluster_id": 2,
-      "root_cause": "Interconnect transaction timed out under fabric congestion: DMA burst length overflows the fabric buffers",
+      "root_cause": "A DMA burst on channel 2 (burst_len=256) overran the fabric buffers. This congested the paths to DDR, and a PCIE->DDR transaction (0xB691) then timed out, causing the fatal interconnect failure.",
       "root_cause_id": "RC_DMA_BURST_OVERFLOW",
-      "confidence": 0.83,
-      "rationale": "Sustained high transaction-queue occupancy and stalls precede a transaction timeout and interconnect failure, suggesting QoS starvation or a potential deadlock on a congested route. Evidence contains the tell-tale(s) 'dma burst overflow', 'burst_len' for RC_DMA_BURST_OVERFLOW.",
+      "confidence": 0.7,
+      "rationale": "Pulling only the WARN/ERROR lines for the whole run (0-3546 ms) shows the catalogue tell-tale for RC_DMA_BURST_OVERFLOW: 'NOC: WARN: DMA burst overflow | channel=2 burst_len=256' at 2882 ms, about 560 ms before the first error. Four high-occupancy congestion warnings follow (CPU<->DDR and CPU<->PCIE, stall_pct 25-31%), and then the PCIE->DDR transaction timeout at 3444 ms. A DMA->DDR buffer overrun fits that sequence. The tell-tales for the other catalogue causes are absent: no 'QoS credit starvation/credits=0' and no 'Dependency cycle suspected'. Those are the markers that identified the high-similarity past incidents 000003 (QoS starvation) and 000021 (deadlock), so those signature matches look superficial. The NOC0 register dump is raw hex with no decoded fields and adds nothing. Confounder: the PCIe link retrain count climbs steadily (36->41) across the error window with aer=0. A flaky PCIe link could also stall the PCIE-sourced transaction. This is why my confidence is moderate rather than high. Thermal, PMU and DDR telemetry are all normal (ecc_ue=0, read latency 72-84 ns).",
       "recommended_actions": [
-        "Reduce the DMA burst length or add outstanding-transaction limits",
-        "Verify buffer depth on the DMA->DDR path",
-        "Review NoC QoS/arbitration weights for the starved initiator",
-        "Check for dependency cycles / deadlock on the congested route"
+        "Rerun the same workload with the DMA channel 2 burst length reduced (e.g. 64/128) and/or an outstanding-transaction limit. Check whether the congestion warnings and the timeout go away.",
+        "Check the buffer depth on the DMA->DDR fabric path against burst_len=256, and capture NoC buffer-occupancy counters around the overflow event.",
+        "Rule out the PCIe link: find out why the retrain count keeps increasing (36->41). Rerun with the link fixed at Gen3 x16 with equalization checked, and see whether the PCIE->DDR timeout still happens.",
+        "Decode the NOC0 error register snapshot (0x60000BDC-0x60000C28) against the register map to confirm the failing initiator and buffer-overflow status bits."
       ],
       "supporting_evidence": [
         "[00:00:02.850] NOC: WARN: Fabric congestion | txn_q=high stall_pct=25 region=CPU<->DDR",
@@ -129,8 +129,60 @@
           "distance": 0.6005820035934448
         }
       ],
-      "source": "rule-based"
+      "source": "llm:claude-opus-5-5:agentic",
+      "trace": [
+        {
+          "step": 1,
+          "tool": "lookup_catalogue",
+          "input": {},
+          "output": "Prior for NOC_TIMEOUT: Interconnect transaction timed out under fabric congestion\nSustained high transaction-queue occupancy and stalls precede a transaction timeout and interconnect failure, suggesting QoS starvation or a potential deadlock on a congested route.\n\n- RC_NOC_QOS_STARVATION: A low-priority initiator is starved of QoS credits\n    tell-tales: qos credit starvation, credits=0\n    actions: Rebalance QoS weights / credits for the starved initiator; Enable age-based arbitration on the congested link\n- RC_NOC_DEADLOCK: Dependency cycle across fabric routes causes a deadlock\n    tell-tales: dependency cycle suspected, cycle\n    actions: Inspect the route table for cyclic dependencies; Enable deadlock-recovery timeouts on the affected ring\n- RC_DMA_BURST_OVERFLOW: DMA burst length overflows the fabric buffers\n    tell-tales: dma burst overflow, burst_len\n    actions: Reduce the DMA burst length or add outstanding-transaction limits; Verify buffer depth on the DMA->DDR path",
+          "note": ""
+        },
+        {
+          "step": 2,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 3000,
+            "end_ms": 3546,
+            "include_info": true,
+            "subsystem": ""
+          },
+          "output": "[00:00:03.003] FW: INFO: Checkpoint | i=308\n[00:00:03.009] THERMAL: INFO: Temp sample | t_c=74 sensor=2\n[00:00:03.013] THERMAL: INFO: Temp sample | t_c=73 sensor=0\n[00:00:03.019] DDR: INFO: DDR counters | ecc_corr=50 ecc_ue=0 rd_lat_ns=82\n[00:00:03.022] THERMAL: INFO: Temp sample | t_c=73 sensor=0\n[00:00:03.036] PMU: INFO: Rail telemetry | rail=VCORE mv=808 i_ma=1393 droop_cnt=0\n[00:00:03.037] PMU: INFO: Rail telemetry | rail=VCORE mv=783 i_ma=1066 droop_cnt=0\n[00:00:03.043] PCIE: INFO: Link stats | gen=3 lanes=x16 retrain=36 aer=0\n[00:00:03.047] PCIE: INFO: Link stats | gen=3 lanes=x16 retrain=37 aer=0\n[00:00:03.060] DDR: INFO: DDR counters | ecc_corr=51 ecc_ue=0 rd_lat_ns=74\n[00:00:03.071] DDR: INFO: DDR counters | ecc_corr=52 ecc_ue=0 rd_lat_ns=81\n[00:00:03.078] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00:00:03.080] THERMAL: INFO: Temp sample | t_c=74 sensor=2\n[00:00:03.084] NOC: WARN: Fabric congestion | txn_q=high stall_pct=31 region=CPU<->DDR\n[00:00:03.092] NOC: INFO: Fabric telemetry | txn_q=high stall_pct=14\n[00:00:03.107] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=11\n[00:00:03.119] PMU: INFO: Rail telemetry | rail=VCORE mv=799 i_ma=1028 droop_cnt=0\n[00:00:03.121] PMU: INFO: Rail telemetry | rail=VCORE mv=805 i_ma=1089 droop_cnt=0\n[00:00:03.126] DDR: INFO: DDR counters | ecc_corr=52 ecc_ue=0 rd_lat_ns=83\n[00:00:03.133] DDR: INFO: DDR counters | ecc_corr=53 ecc_ue=0 rd_lat_ns=84\n[00:00:03.144] THERMAL: INFO: Temp sample | t_c=73 sensor=3\n[00:00:03.14",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "read_block",
+          "input": {
+            "ts_ms": 3516
+          },
+          "output": "[00:00:03.516] NOC: ERROR: NoC error register snapshot | fabric=NOC0\nREG_DUMP_BEGIN\n60000BDC: A63B44FC\n60000BE0: 00A6681A\n60000BE4: 10583F8F\n60000BE8: 83F82F65\n60000BEC: DB785C37\n60000BF0: 3FCA9EAB\n60000BF4: DAACF7F5\n60000BF8: 97691F91\n60000BFC: F5897A2E\n60000C00: 54746B38\n60000C04: F22D509E\n60000C08: 68AEB8A3\n60000C0C: 9F3E4AB5\n60000C10: 1794F2BD\n60000C14: C097F5EC\n60000C18: 0E0CF134\n60000C1C: 630B3C6A\n60000C20: 4B51C0A4\n60000C24: E099B872\n60000C28: E1907C44\nREG_DUMP_END",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 3546,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:02.850] NOC: WARN: Fabric congestion | txn_q=high stall_pct=25 region=CPU<->DDR\n[00:00:02.882] NOC: WARN: DMA burst overflow | channel=2 burst_len=256\n[00:00:02.976] NOC: WARN: Fabric congestion | txn_q=high stall_pct=29 region=CPU<->PCIE\n[00:00:03.084] NOC: WARN: Fabric congestion | txn_q=high stall_pct=31 region=CPU<->DDR\n[00:00:03.162] NOC: WARN: Fabric congestion | txn_q=high stall_pct=28 region=CPU<->PCIE\n[00:00:03.444] NOC: ERROR: Transaction timeout | txn_id=0xB691 src=PCIE dst=DDR rc=-62\n[00:00:03.516] NOC: ERROR: NoC error register snapshot | fabric=NOC0\n[00:00:03.546] SYSTEM: FATAL: Interconnect failure | reason=NOC_TIMEOUT",
+          "note": ""
+        },
+        {
+          "step": 5,
+          "tool": "search_incidents",
+          "input": {
+            "query": "NOC: WARN: DMA burst overflow | channel=2 burst_len=256",
+            "top_k": 5
+          },
+          "output": "- run 000003 | NOC_TIMEOUT | root_cause=RC_NOC_QOS_STARVATION | similarity=0.4992\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: QoS credit starvation\n- run 000021 | NOC_TIMEOUT | root_cause=RC_NOC_DEADLOCK | similarity=0.4767\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Dependency cycle suspected ; NOC: Fabric <*>\n- run 000023 | PMU_DROOP | root_cause=RC_REGULATOR_LIMIT | similarity=0.4114\n    PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event\n- run 000020 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.4062\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power \n- run 000015 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.3594\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down",
+          "note": ""
+        }
+      ]
     }
   ],
-  "generated_at": "2026-11-02T23:22:00+00:00"
+  "generated_at": "2026-11-03T23:23:27+00:00"
 }

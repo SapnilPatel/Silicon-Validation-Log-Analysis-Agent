@@ -71,15 +71,15 @@
     {
       "failure_id": "000000:DDR_ECC",
       "cluster_id": 0,
-      "root_cause": "DDR uncorrectable ECC error following rising corrected-error rate: Clock-domain-crossing synchroniser glitch in the controller",
+      "root_cause": "A clock-domain-crossing synchroniser glitch in the DDR controller read FIFO (phy->ctrl) on ch1 corrupted read data, leading to a rising corrected-ECC rate, read retries, and then an uncorrectable ECC error and memtest mismatch.",
       "root_cause_id": "RC_DDR_CDC_GLITCH",
-      "confidence": 0.83,
-      "rationale": "Corrected ECC errors trending up, then a read-retry, then an uncorrectable error and memtest mismatch indicate a marginal DRAM timing/training edge, often aggravated by voltage droop under load. Evidence contains the tell-tale(s) 'cdc synchronizer glitch', 'cdc' for RC_DDR_CDC_GLITCH.",
+      "confidence": 0.7,
+      "rationale": "Before the failure there are no WARN or ERROR lines at all from 0 to 8000 ms. Then the usual DDR_ECC sequence plays out on ch1: corrected ECC errors rising on bank 6 (8503 ms), a read retry (8621 ms), an uncorrectable error (8855 ms), a memtest mismatch (8910 ms), and the fatal error at 2400 MHz. The one warning that points to a specific cause is 'CDC synchronizer glitch | fifo=rd_fifo domain=phy->ctrl' at 8526 ms, which matches the catalogue tell-tale for RC_DDR_CDC_GLITCH, and it lands right as the errors start climbing. I found none of the markers for the other causes: no timing parameter violation (tRFC/tRCD), no low training margin, and no VDDQ droop (only VCORE is logged, with droop_cnt=0). The top historical match (run 000016, timing violation) is only similar because it has the same generic DDR_ECC signature. Its distinguishing marker is missing here, so I'm giving it less weight. The PHY register dump has no labels, so I couldn't read anything from it. Confidence is moderate because this rests on a single warning line and the cause has only been seen once in the corpus.",
       "recommended_actions": [
-        "Review CDC constraints on the controller/PHY boundary",
-        "Reproduce at corner voltage/frequency to isolate the glitch",
-        "Re-run DDR write-leveling/read training and widen timing margins",
-        "Correlate UE timestamps with PMU droop / thermal events"
+        "Review the CDC constraints and synchroniser design (number of synchroniser stages, gray-coded pointers) on the rd_fifo between PHY and controller, and check STA/CDC lint reports for that boundary",
+        "Reproduce at corner voltage/temperature and at 2400 MHz vs a lower DRAM frequency to see whether the glitch and ECC errors track the clock ratio rather than DRAM timings",
+        "Add a monitor that counts rd_fifo CDC glitches and timestamp it against corrected ECC events on ch1 bank 6 to confirm they are causally linked",
+        "As a check against the alternative, re-run with relaxed tRCD/tRFC: if the failure persists unchanged, a timing violation (RC_DDR_TIMING_VIOLATION) is effectively ruled out"
       ],
       "supporting_evidence": [
         "[00:00:08.503] DDR: WARN: ECC corrected errors rising | ch=1 bank=6 delta=107",
@@ -133,8 +133,62 @@
           "distance": 0.6342806816101074
         }
       ],
-      "source": "rule-based"
+      "source": "llm:claude-opus-5-5:agentic",
+      "trace": [
+        {
+          "step": 1,
+          "tool": "lookup_catalogue",
+          "input": {},
+          "output": "Prior for DDR_ECC: DDR uncorrectable ECC error following rising corrected-error rate\nCorrected ECC errors trending up, then a read-retry, then an uncorrectable error and memtest mismatch indicate a marginal DRAM timing/training edge, often aggravated by voltage droop under load.\n\n- RC_DDR_TIMING_VIOLATION: A DRAM timing parameter is violated at the configured frequency\n    tell-tales: timing parameter violation, trfc, trcd\n    actions: Relax the flagged timing parameter and re-run the memtest; Cross-check the DRAM datasheet timings against the controller config\n- RC_DDR_TRAINING_EDGE: Read/write training converged on a marginal edge\n    tell-tales: read training margin low, margin_ps\n    actions: Re-run training with per-bit deskew and widen the margin window; Sweep VREF to re-centre the data eye\n- RC_PMU_DROOP_UNDER_LOAD: VDDQ droop under load corrupts DRAM accesses\n    tell-tales: fast droop event, rail=vddq\n    actions: Correlate the UE with the VDDQ droop and add decoupling on the rail; Tune the regulator transient response for the memory rail\n- RC_DDR_CDC_GLITCH: Clock-domain-crossing synchroniser glitch in the controller\n    tell-tales: cdc synchronizer glitch, cdc\n    actions: Review CDC constraints on the controller/PHY boundary; Reproduce at corner voltage/frequency to isolate the glitch",
+          "note": ""
+        },
+        {
+          "step": 2,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 8000,
+            "end_ms": 8992,
+            "include_info": true,
+            "subsystem": ""
+          },
+          "output": "[00:00:08.006] PMU: INFO: Rail telemetry | rail=VCORE mv=831 i_ma=1348 droop_cnt=0\n[00:00:08.015] PMU: INFO: Rail telemetry | rail=VCORE mv=856 i_ma=1224 droop_cnt=0\n[00:00:08.018] PMU: INFO: Rail telemetry | rail=VCORE mv=850 i_ma=1108 droop_cnt=0\n[00:00:08.033] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=88 aer=0\n[00:00:08.047] FW: INFO: Loop tick | i=941\n[00:00:08.051] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=12\n[00:00:08.064] PMU: INFO: Rail telemetry | rail=VCORE mv=838 i_ma=1322 droop_cnt=0\n[00:00:08.069] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=89 aer=0\n[00:00:08.084] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00:00:08.090] FW: INFO: Heartbeat | i=946\n[00:00:08.100] THERMAL: INFO: Temp sample | t_c=54 sensor=2\n[00:00:08.106] PMU: INFO: Rail telemetry | rail=VCORE mv=870 i_ma=1320 droop_cnt=0\n[00:00:08.109] THERMAL: INFO: Temp sample | t_c=55 sensor=0\n[00:00:08.114] THERMAL: INFO: Temp sample | t_c=54 sensor=3\n[00:00:08.116] DDR: INFO: DDR counters | ecc_corr=136 ecc_ue=0 rd_lat_ns=82\n[00:00:08.122] DDR: INFO: DDR counters | ecc_corr=136 ecc_ue=0 rd_lat_ns=76\n[00:00:08.136] THERMAL: INFO: Temp sample | t_c=56 sensor=2\n[00:00:08.148] PMU: INFO: Rail telemetry | rail=VCORE mv=875 i_ma=1321 droop_cnt=0\n[00:00:08.157] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00:00:08.169] THERMAL: INFO: Temp sample | t_c=53 sensor=2\n[00:00:08.178] PMU: INFO: Rail telemetry | rail=VCORE mv=834 i_ma=1296 droop_cnt=0\n[00:00:08.193] PCIE: INFO: Link sta",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "read_block",
+          "input": {
+            "ts_ms": 8969
+          },
+          "output": "[00:00:08.969] DDR: ERROR: DDR PHY register snapshot | ch=1\nREG_DUMP_BEGIN\n50000FDF: 71758CC9\n50000FE3: B7D52759\n50000FE7: 78FC9729\n50000FEB: 48EFF41F\n50000FEF: AC2D3FA9\n50000FF3: F21381DF\n50000FF7: F22D67B5\n50000FFB: B0DDD6EE\n50000FFF: A0908EDD\n50001003: A468DD2D\n50001007: 139DFD0D\n5000100B: 042927D8\n5000100F: DEB68556\n50001013: 002E9FDB\n50001017: EFD2C39C\n5000101B: 75464060\n5000101F: BA32A10F\n50001023: 1FE9B22D\n50001027: 8C02B981\n5000102B: FCC7762F\n5000102F: 8C8E05D9\n50001033: 3964F17E\n50001037: D68B5E66\n5000103B: 71B09596\n5000103F: E52D3C20\n50001043: 4C75C2A9\n50001047: F4EEE15A\n5000104B: 274B5F58\n5000104F: FD295C6C\n50001053: D9747063\n50001057: D51EB9E4\n5000105B: C5BD16A6\nREG_DUMP_END",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 8660,
+            "end_ms": 8992,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:08.855] DDR: ERROR: ECC uncorrectable error | ch=1 bank=6 syndrome=0xF709\n[00:00:08.910] FW: ERROR: Memtest mismatch | addr=0x957A5CF9 expected=0xDEADBEEF got=0xF4752381\n[00:00:08.969] DDR: ERROR: DDR PHY register snapshot | ch=1\n[00:00:08.992] SYSTEM: FATAL: DDR subsystem failure | ch=1 dram_freq_mhz=2400",
+          "note": ""
+        },
+        {
+          "step": 5,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 8000,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "No matching lines between 0 and 8000 ms.",
+          "note": ""
+        }
+      ]
     }
   ],
-  "generated_at": "2026-11-02T23:22:00+00:00"
+  "generated_at": "2026-11-03T23:21:56+00:00"
 }

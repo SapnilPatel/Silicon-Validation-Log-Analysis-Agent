@@ -117,15 +117,15 @@
     {
       "failure_id": "000001:PCIE_TIMEOUT",
       "cluster_id": 3,
-      "root_cause": "PCIe link training failed to reach L0 (LTSSM stuck in Polling/Recovery): Reference clock instability / gating during link training",
+      "root_cause": "The PCIe reference clock became unstable (587 ppm off, PLL lost lock) during link training. As a result, lane 0 kept dropping into Recovery with rx_detect_fail and finally hit link-training timeouts that ended Gen3 x8 init.",
       "root_cause_id": "RC_PCIE_REFCLK_GATING",
-      "confidence": 0.83,
-      "rationale": "Repeated LTSSM Recovery transitions with AER corrected errors followed by 'Link training timeout' point to physical-layer signal-integrity or refclk issues rather than software configuration. Evidence contains the tell-tale(s) 'refclk instability', 'refclk' for RC_PCIE_REFCLK_GATING.",
+      "confidence": 0.8,
+      "rationale": "The first PCIe problem in the run is 'Refclk instability detected | ppm=587 pll_lock=0' at 11.033 s, which matches the catalogue warning sign for RC_PCIE_REFCLK_GATING. It is followed by four 'LTSSM -> Recovery' entries (rx_detect_fail) at 11.3-12.1 s, an AER corrected error (ReplayTimerTimeout) at 12.388 s, then link-training timeouts in Polling (12.635 s) and Recovery (13.944 s). Both firmware retries failed, and the run ended in FATAL at 14.570 s. This is the sequence the catalogue describes for a physical-layer or refclk fault. There are no signs of the other PCIe causes: no low lane-margin/eye_width messages, no ASPM L1 entry, no EQ phase failure. The retrieved 'similar' incidents are thermal, DDR and NoC failures and don't match this signature. There was also a separate thermal trip in the same run (fan at 1233 rpm against a 4057 target, 116 °C, emergency shutdown at 12.067 s). That is its own RC_FAN_PROFILE_BAD incident. Heat may have worsened the refclk PLL, but it does not explain the PCIe failure: the refclk loss of lock was logged at 11.033 s, before the first high-temperature warning at 11.506 s. The PCIe register dump is raw hex with no decode, so it neither confirms nor rules anything out. Confidence is not higher because the thermal event overlaps, and whether the refclk was gated or just drifting is not yet confirmed.",
       "recommended_actions": [
-        "Scope the refclk at the connector and SoC ball for gating/jitter",
-        "Disable spread-spectrum clocking and retest link training",
-        "Check refclk routing/spread-spectrum and PLL lock on the failing lane",
-        "Review SI margins and equalization (EQ) preset tuning for the negotiated gen"
+        "Scope the refclk at the slot connector and at the SoC ball during link training; look for gating, jitter and ppm offset, and check PLL lock status.",
+        "Turn off spread-spectrum clocking and any refclk gating or CLKREQ#-driven clock control, then repeat link training many times.",
+        "Rerun with the fan profile fixed and temperature held steady, to rule out heat causing the refclk PLL to lose lock (which would point back to RC_FAN_PROFILE_BAD).",
+        "Decode the PCIe controller register dump to get the LTSSM history and PLL/refclk status bits."
       ],
       "supporting_evidence": [
         "[00:00:11.033] PCIE: WARN: Refclk instability detected | ppm=587 pll_lock=0",
@@ -183,20 +183,62 @@
           "distance": 0.6492849588394165
         }
       ],
-      "source": "rule-based"
+      "source": "llm:claude-opus-5-5:agentic",
+      "trace": [
+        {
+          "step": 1,
+          "tool": "lookup_catalogue",
+          "input": {},
+          "output": "Prior for PCIE_TIMEOUT: PCIe link training failed to reach L0 (LTSSM stuck in Polling/Recovery)\nRepeated LTSSM Recovery transitions with AER corrected errors followed by 'Link training timeout' point to physical-layer signal-integrity or refclk issues rather than software configuration.\n\n- RC_PCIE_REFCLK_GATING: Reference clock instability / gating during link training\n    tell-tales: refclk instability, refclk\n    actions: Scope the refclk at the connector and SoC ball for gating/jitter; Disable spread-spectrum clocking and retest link training\n- RC_PCIE_SI_MARGIN_LOW: Lane signal-integrity margin below the receiver threshold\n    tell-tales: lane margining below threshold, eye_width\n    actions: Run lane-margining sweeps and compare eye width against the gen spec; Review trace length/loss budget and connector/retimer placement\n- RC_PCIE_ASPM_MISCONFIG: ASPM L1 substate entered while training, gating the link clock\n    tell-tales: aspm l1 entry during training, aspm\n    actions: Disable ASPM/L1 substates in firmware config and retest; Verify CLKREQ# handling between root port and endpoint\n- RC_PCIE_EQ_TUNING: Equalization preset/coefficients fail to converge at the negotiated speed\n    tell-tales: equalization phase failed, eq_fail\n    actions: Sweep TX presets / RX CTLE-DFE coefficients for the negotiated gen; Force a lower gen to confirm the EQ-at-speed hypothesis",
+          "note": ""
+        },
+        {
+          "step": 2,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 12500,
+            "end_ms": 14600,
+            "include_info": true,
+            "subsystem": ""
+          },
+          "output": "[00:00:12.504] PMU: INFO: Rail telemetry | rail=VCORE mv=922 i_ma=1375 droop_cnt=0\n[00:00:12.518] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=5\n[00:00:12.528] PMU: INFO: Rail telemetry | rail=VCORE mv=876 i_ma=1222 droop_cnt=0\n[00:00:12.537] NOC: INFO: Fabric telemetry | txn_q=high stall_pct=11\n[00:00:12.538] PMU: INFO: Rail telemetry | rail=VCORE mv=920 i_ma=1184 droop_cnt=0\n[00:00:12.543] FW: INFO: Checkpoint | i=1502\n[00:00:12.554] PMU: INFO: Rail telemetry | rail=VCORE mv=902 i_ma=1343 droop_cnt=0\n[00:00:12.562] PMU: INFO: Rail telemetry | rail=VCORE mv=917 i_ma=1101 droop_cnt=0\n[00:00:12.564] DDR: INFO: DDR counters | ecc_corr=237 ecc_ue=0 rd_lat_ns=72\n[00:00:12.567] THERMAL: INFO: Temp sample | t_c=27 sensor=0\n[00:00:12.572] FW: INFO: Checkpoint | i=1507\n[00:00:12.579] THERMAL: INFO: Temp sample | t_c=26 sensor=2\n[00:00:12.591] PCIE: INFO: Link stats | gen=3 lanes=x8 retrain=118 aer=0\n[00:00:12.602] PCIE: INFO: Link stats | gen=3 lanes=x8 retrain=118 aer=0\n[00:00:12.616] FW: INFO: Checkpoint | i=1511\n[00:00:12.619] DDR: INFO: DDR counters | ecc_corr=238 ecc_ue=0 rd_lat_ns=83\n[00:00:12.625] THERMAL: INFO: Temp sample | t_c=24 sensor=3\n[00:00:12.635] PCIE: ERROR: Link training timeout | lane=0 ltssm=Polling rc=-110\n[00:00:12.637] DDR: INFO: DDR counters | ecc_corr=238 ecc_ue=0 rd_lat_ns=81\n[00:00:12.637] FW: WARN: Retrying PCIe init | attempt=1/3 lane=0\n[00:00:12.638] THERMAL: INFO: Temp sample | t_c=25 sensor=0\n[00:00:12.653] THERMAL: INFO: Temp sample | t_c=24 sen",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "read_block",
+          "input": {
+            "ts_ms": 14538
+          },
+          "output": "[00:00:14.538] PCIE: ERROR: PCIe controller register snapshot | lane=0\nREG_DUMP_BEGIN\n40010F89: CA9B66D1\n40010F8D: D87A8392\n40010F91: 3A608BAD\n40010F95: 74981C98\n40010F99: 8D60292F\n40010F9D: BCFD00C1\n40010FA1: E68D2F14\n40010FA5: C1212530\n40010FA9: 589F15F5\n40010FAD: C685E4BA\n40010FB1: 6756109A\n40010FB5: 9FDE1D44\n40010FB9: 31B14F45\n40010FBD: 12C1E691\n40010FC1: 19875E02\n40010FC5: FE8F8CC7\n40010FC9: 69C38494\n40010FCD: 083713F5\n40010FD1: 0F5F0E33\n40010FD5: 9796C270\n40010FD9: 03887E12\n40010FDD: 1B554DAC\n40010FE1: C546CA48\n40010FE5: 5C010DF6\nREG_DUMP_END",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 14600,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:11.033] PCIE: WARN: Refclk instability detected | ppm=587 pll_lock=0\n[00:00:11.305] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail\n[00:00:11.506] THERMAL: WARN: Temperature high | t_c=90 policy=DVFS\n[00:00:11.543] THERMAL: WARN: Fan speed below profile | rpm=1233 target_rpm=4057\n[00:00:11.600] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail\n[00:00:11.813] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000\n[00:00:11.889] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail\n[00:00:12.060] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=116 threshold_c=105\n[00:00:12.067] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP\n[00:00:12.111] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail\n[00:00:12.388] PCIE: WARN: AER: Corrected error | lane=0 code=ReplayTimerTimeout\n[00:00:12.635] PCIE: ERROR: Link training timeout | lane=0 ltssm=Polling rc=-110\n[00:00:12.637] FW: WARN: Retrying PCIe init | attempt=1/3 lane=0\n[00:00:13.944] PCIE: ERROR: Link training timeout | lane=0 ltssm=Recovery rc=-110\n[00:00:13.946] FW: WARN: Retrying PCIe init | attempt=2/3 lane=0\n[00:00:14.538] PCIE: ERROR: PCIe controller register snapshot | lane=0\n[00:00:14.570] SYSTEM: FATAL: PCIe initialization failed | lane=0 gen=3 lanes=x8",
+          "note": ""
+        }
+      ]
     },
     {
       "failure_id": "000001:THERMAL_TRIP",
       "cluster_id": 5,
-      "root_cause": "Junction temperature exceeded the thermal trip threshold: Fan speed stays below the profile target as temperature rises",
+      "root_cause": "The fan ran far below its profile target (1233 rpm vs 4057 rpm, about 30%) while the die heated up. The DVFS step-down alone could not remove the heat, so the die went past the 105C trip point (116C) and the system shut down.",
       "root_cause_id": "RC_FAN_PROFILE_BAD",
-      "confidence": 0.83,
-      "rationale": "Temperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload. Evidence contains the tell-tale(s) 'fan speed below profile', 'target_rpm' for RC_FAN_PROFILE_BAD.",
+      "confidence": 0.72,
+      "rationale": "Order of events: 11.506 s Temperature high t_c=90 (DVFS policy active) -> 11.543 s Fan speed below profile rpm=1233 target_rpm=4057 -> 11.813 s DVFS step-down from 1200 to 1000 MHz, about 300 ms after the warning -> 12.060 s trip at t_c=116 -> 12.067 s emergency shutdown. The fan warning is the catalogue tell-tale for RC_FAN_PROFILE_BAD. Neither competing tell-tale appears anywhere in the run (WARN+ lines from 0 to 11.2 s and the full window before the trip): no 'power burst detected / p_w=' line, so RC_WORKLOAD_BURST is unsupported even though two similar runs had that cause; and no 'sensor-to-ambient delta / delta_c' line, so RC_HEATSINK_POOR is unsupported. The VCORE current also stayed flat at about 1.0-1.4 A, which argues against a burst. One caveat: the routine INFO temperature samples (sensors 0-3) stay at 23-27C right up to the trip, while the warnings report 90 and then 116C. Either the hotspot sensor is not in the routine samples, or the poor cooling is a contact problem. I have not ruled out heatsink/TIM contact, which is why confidence is not higher. The PCIe refclk instability (11.033 s), the LTSSM rx_detect_fail recoveries and the PCIe register dump (which is from 14.538 s, not the shutdown) look like a separate RC_PCIE_REFCLK_GATING issue, not the cause of this trip.",
       "recommended_actions": [
-        "Fix the fan curve / PWM mapping in the thermal policy",
-        "Verify tachometer feedback and fan power",
-        "Inspect heatsink mounting/TIM and airflow on the DUT",
-        "Make the fan/DVFS profile more aggressive ahead of the trip point"
+        "Check the fan curve / PWM duty mapping in the thermal policy at roughly 90C: is the commanded duty actually sent, and does it give the ~4000 rpm target?",
+        "Check tachometer feedback and fan supply voltage/current on this board; drive the fan at 100% PWM and confirm it reaches its rated rpm.",
+        "Re-run the same workload with the fan forced to the profile target (or with the fixed curve) and log the hotspot temperature to confirm it stays below 105C. If it still trips, re-seat the heatsink/TIM and check die-to-ambient delta.",
+        "Triage the PCIe refclk instability (pll_lock=0, repeated rx_detect_fail) separately as its own RC_PCIE_REFCLK_GATING issue."
       ],
       "supporting_evidence": [
         "[00:00:11.033] PCIE: WARN: Refclk instability detected | ppm=587 pll_lock=0",
@@ -249,8 +291,74 @@
           "distance": 0.5788917541503906
         }
       ],
-      "source": "rule-based"
+      "source": "llm:claude-opus-5-5:agentic",
+      "trace": [
+        {
+          "step": 1,
+          "tool": "lookup_catalogue",
+          "input": {},
+          "output": "Prior for THERMAL_TRIP: Junction temperature exceeded the thermal trip threshold\nTemperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload.\n\n- RC_HEATSINK_POOR: Poor heatsink/TIM contact — large die-to-ambient delta\n    tell-tales: sensor-to-ambient delta high, delta_c\n    actions: Re-seat the heatsink and replace the TIM; Measure mounting pressure against the thermal spec\n- RC_FAN_PROFILE_BAD: Fan speed stays below the profile target as temperature rises\n    tell-tales: fan speed below profile, target_rpm\n    actions: Fix the fan curve / PWM mapping in the thermal policy; Verify tachometer feedback and fan power\n- RC_WORKLOAD_BURST: A sustained power burst outruns the cooling headroom\n    tell-tales: power burst detected, p_w=\n    actions: Cap the burst power or lengthen the DVFS step-down reaction; Add thermal headroom to the test's power envelope",
+          "note": ""
+        },
+        {
+          "step": 2,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 10500,
+            "end_ms": 12067,
+            "include_info": true,
+            "subsystem": ""
+          },
+          "output": "[00:00:10.504] FW: INFO: Heartbeat | i=1251\n[00:00:10.516] DDR: INFO: DDR counters | ecc_corr=206 ecc_ue=0 rd_lat_ns=74\n[00:00:10.517] FW: INFO: Heartbeat | i=1253\n[00:00:10.526] DDR: INFO: DDR counters | ecc_corr=208 ecc_ue=0 rd_lat_ns=84\n[00:00:10.540] FW: INFO: Checkpoint | i=1255\n[00:00:10.555] DDR: INFO: DDR counters | ecc_corr=208 ecc_ue=0 rd_lat_ns=73\n[00:00:10.557] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=15\n[00:00:10.570] THERMAL: INFO: Temp sample | t_c=23 sensor=1\n[00:00:10.571] THERMAL: INFO: Temp sample | t_c=24 sensor=1\n[00:00:10.576] FW: INFO: Loop tick | i=1260\n[00:00:10.580] PMU: INFO: Rail telemetry | rail=VCORE mv=906 i_ma=1108 droop_cnt=0\n[00:00:10.591] PCIE: INFO: Link stats | gen=3 lanes=x8 retrain=102 aer=0\n[00:00:10.596] DDR: INFO: DDR counters | ecc_corr=209 ecc_ue=0 rd_lat_ns=74\n[00:00:10.610] DDR: INFO: DDR counters | ecc_corr=209 ecc_ue=0 rd_lat_ns=83\n[00:00:10.624] PMU: INFO: Rail telemetry | rail=VCORE mv=879 i_ma=1262 droop_cnt=0\n[00:00:10.631] DDR: INFO: DDR counters | ecc_corr=209 ecc_ue=0 rd_lat_ns=78\n[00:00:10.638] FW: INFO: Loop tick | i=1267\n[00:00:10.649] THERMAL: INFO: Temp sample | t_c=23 sensor=1\n[00:00:10.662] NOC: INFO: Fabric telemetry | txn_q=high stall_pct=11\n[00:00:10.667] DDR: INFO: DDR counters | ecc_corr=209 ecc_ue=0 rd_lat_ns=81\n[00:00:10.682] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=1\n[00:00:10.694] FW: INFO: Loop tick | i=1272\n[00:00:10.709] PCIE: INFO: Link stats | gen=3 lanes=x8 retrain=102 aer=0\n[00:00:",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 11200,
+            "end_ms": 12067,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:11.305] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail\n[00:00:11.506] THERMAL: WARN: Temperature high | t_c=90 policy=DVFS\n[00:00:11.543] THERMAL: WARN: Fan speed below profile | rpm=1233 target_rpm=4057\n[00:00:11.600] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail\n[00:00:11.813] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000\n[00:00:11.889] PCIE: WARN: LTSSM -> Recovery | lane=0 reason=rx_detect_fail\n[00:00:12.060] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=116 threshold_c=105\n[00:00:12.067] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 11200,
+            "end_ms": 12067,
+            "include_info": true,
+            "subsystem": "THERMAL"
+          },
+          "output": "[00:00:11.220] THERMAL: INFO: Temp sample | t_c=26 sensor=2\n[00:00:11.225] THERMAL: INFO: Temp sample | t_c=26 sensor=1\n[00:00:11.299] THERMAL: INFO: Temp sample | t_c=26 sensor=1\n[00:00:11.311] THERMAL: INFO: Temp sample | t_c=26 sensor=2\n[00:00:11.313] THERMAL: INFO: Temp sample | t_c=26 sensor=0\n[00:00:11.330] THERMAL: INFO: Temp sample | t_c=23 sensor=1\n[00:00:11.333] THERMAL: INFO: Temp sample | t_c=24 sensor=3\n[00:00:11.463] THERMAL: INFO: Temp sample | t_c=26 sensor=2\n[00:00:11.506] THERMAL: WARN: Temperature high | t_c=90 policy=DVFS\n[00:00:11.538] THERMAL: INFO: Temp sample | t_c=23 sensor=0\n[00:00:11.543] THERMAL: WARN: Fan speed below profile | rpm=1233 target_rpm=4057\n[00:00:11.627] THERMAL: INFO: Temp sample | t_c=24 sensor=3\n[00:00:11.920] THERMAL: INFO: Temp sample | t_c=25 sensor=0\n[00:00:11.962] THERMAL: INFO: Temp sample | t_c=27 sensor=2\n[00:00:12.018] THERMAL: INFO: Temp sample | t_c=24 sensor=1\n[00:00:12.060] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=116 threshold_c=105\n[00:00:12.067] THERMAL: INFO: Temp sample | t_c=25 sensor=3",
+          "note": ""
+        },
+        {
+          "step": 5,
+          "tool": "get_context",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 11200,
+            "include_info": false,
+            "subsystem": ""
+          },
+          "output": "[00:00:11.033] PCIE: WARN: Refclk instability detected | ppm=587 pll_lock=0",
+          "note": ""
+        },
+        {
+          "step": 6,
+          "tool": "read_block",
+          "input": {
+            "ts_ms": 12067
+          },
+          "output": "[00:00:14.538] PCIE: ERROR: PCIe controller register snapshot | lane=0\nREG_DUMP_BEGIN\n40010F89: CA9B66D1\n40010F8D: D87A8392\n40010F91: 3A608BAD\n40010F95: 74981C98\n40010F99: 8D60292F\n40010F9D: BCFD00C1\n40010FA1: E68D2F14\n40010FA5: C1212530\n40010FA9: 589F15F5\n40010FAD: C685E4BA\n40010FB1: 6756109A\n40010FB5: 9FDE1D44\n40010FB9: 31B14F45\n40010FBD: 12C1E691\n40010FC1: 19875E02\n40010FC5: FE8F8CC7\n40010FC9: 69C38494\n40010FCD: 083713F5\n40010FD1: 0F5F0E33\n40010FD5: 9796C270\n40010FD9: 03887E12\n40010FDD: 1B554DAC\n40010FE1: C546CA48\n40010FE5: 5C010DF6\nREG_DUMP_END",
+          "note": ""
+        }
+      ]
     }
   ],
-  "generated_at": "2026-11-02T23:22:00+00:00"
+  "generated_at": "2026-11-03T23:22:41+00:00"
 }
