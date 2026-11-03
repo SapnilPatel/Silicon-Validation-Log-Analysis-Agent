@@ -49,11 +49,17 @@ def test_dashboard_renders_reports_and_metrics(app_env):
 
 def test_dashboard_live_analysis_button(app_env):
     at = _run(AppTest.from_file(str(APP), default_timeout=180))
+    # Analyse the *same* anomalous run that the Run detail tab is already showing:
+    # both tabs then render identical charts/tables, which must not collide on ids.
+    detail = next(sb for sb in at.selectbox if sb.label == "Select run")
+    live = next(sb for sb in at.selectbox if sb.label == "Run")
+    live.set_value(detail.value)
     button = next(b for b in at.button if b.label == "Analyse run")
     button.click()
     _run(at)
-    # A fresh report was rendered: a subheader "Run <id> — ..." from the live tab.
-    assert any(s.value.startswith("Run ") for s in at.subheader)
+    run_headers = [s.value for s in at.subheader if s.value.startswith(f"Run {detail.value}")]
+    assert len(run_headers) == 2, run_headers  # detail tab + live tab
+    assert not at.error
 
 
 def test_dashboard_falls_back_to_bundled_examples(app_env, tmp_path):

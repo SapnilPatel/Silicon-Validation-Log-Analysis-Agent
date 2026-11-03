@@ -254,7 +254,7 @@ def render_overview(reports: list[dict]) -> None:
         )
 
 
-def render_failure(f: dict, hyp: dict | None) -> None:
+def render_failure(f: dict, hyp: dict | None, key: str = "detail") -> None:
     icon = SEVERITY_ICON.get(f["severity"], "⬜")
     seen = f.get("occurrences", 1)
     title = f"{icon} {f['failure_type']} — {f['severity'].upper()} ({f['subsys']})"
@@ -292,10 +292,11 @@ def render_failure(f: dict, hyp: dict | None) -> None:
                 ),
                 width="stretch",
                 hide_index=True,
+                key=f"{key}-sim-{f['failure_id']}",
             )
 
 
-def render_timeline(report: dict) -> None:
+def render_timeline(report: dict, key: str = "detail") -> None:
     """Where in the run each failure happened (one row per failure)."""
     rows = report["failures"]
     if not rows:
@@ -329,10 +330,12 @@ def render_timeline(report: dict) -> None:
         showlegend=len(rows) > 1,
         legend={"orientation": "h", "y": -0.35},
     )
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width="stretch", key=f"{key}-timeline-{report['run_id']}")
 
 
-def render_run(report: dict) -> None:
+def render_run(report: dict, key: str = "detail") -> None:
+    """Render one report. ``key`` namespaces element ids so the same run can be shown
+    in two tabs at once (Run detail + Live analysis) without id collisions."""
     status = "🔴 ANOMALOUS" if report["anomalous"] else "🟢 PASS"
     st.subheader(f"Run {report['run_id']} — {status}")
     meta = report["meta"]
@@ -344,10 +347,10 @@ def render_run(report: dict) -> None:
     if not report["failures"]:
         st.success("No failures detected in this run.")
         return
-    render_timeline(report)
+    render_timeline(report, key)
     hyp_by_fid = {h["failure_id"]: h for h in report["hypotheses"]}
     for f in report["failures"]:
-        render_failure(f, hyp_by_fid.get(f["failure_id"]))
+        render_failure(f, hyp_by_fid.get(f["failure_id"]), key)
     with st.expander("Markdown report"):
         try:
             from svla_agent.models import RunReport
@@ -409,7 +412,7 @@ def render_live(pipe: AnalysisPipeline, api_key: str | None) -> None:
             else:
                 report = _analyse(found[0])
     if report:
-        render_run(report)
+        render_run(report, key="live")
 
 
 def _metric_row(items: list[tuple[str, Any]]) -> None:
