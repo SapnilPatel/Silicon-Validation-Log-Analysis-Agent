@@ -282,3 +282,26 @@ def test_llm_path_accepts_root_causes_from_retrieved_incidents(settings: Setting
     hyp = agent.generate(f, similar)
     assert provider.enum == ["KERNDTLB", "KERNSTOR", "OTHER"]
     assert hyp.root_cause_id == "KERNDTLB"
+
+
+def test_holdout_cache_resumes_without_recomputing(pipeline, settings, dataset, tmp_path):
+    from svla_agent.eval.metrics import holdout_evaluation
+
+    result = pipeline.run(index=False, write=False, hypotheses=False)
+    labels = load_labels(dataset["labels"])
+    cache = tmp_path / "hyp.json"
+    first = holdout_evaluation(result, labels, pipeline.store, pipeline.agent, cache_path=cache)
+    assert first["hypotheses_reused_from_cache"] == 0 and cache.exists()
+
+    calls = {"n": 0}
+    original = pipeline.agent.generate
+
+    def counting(*a, **kw):
+        calls["n"] += 1
+        return original(*a, **kw)
+
+    pipeline.agent.generate = counting  # type: ignore[method-assign]
+    second = holdout_evaluation(result, labels, pipeline.store, pipeline.agent, cache_path=cache)
+    assert calls["n"] == 0
+    assert second["hypotheses_reused_from_cache"] == first["test_failures"]
+    assert second["root_cause"]["accuracy"] == first["root_cause"]["accuracy"]

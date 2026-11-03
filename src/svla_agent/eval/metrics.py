@@ -18,7 +18,9 @@ in the index would be trivially perfect.
 
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
+from pathlib import Path
 
 import numpy as np
 from sklearn.metrics import (
@@ -245,10 +247,14 @@ def holdout_evaluation(
     agent: HypothesisAgent,
     holdout: float = 0.3,
     k: int = 5,
+    cache_path: str | Path | None = None,
 ) -> dict:
     """Index the *train* runs' failures, then retrieve + hypothesise the held-out ones.
 
-    Leaves the store re-populated with every failure afterwards.
+    Leaves the store re-populated with every failure afterwards. With
+    ``cache_path``, each hypothesis is persisted as soon as it is produced and
+    reused on a rerun, so an interrupted (paid) LLM evaluation resumes instead
+    of starting over.
     """
     rc_map = root_cause_map(labels)
     run_ids = [r.run_id for r in result.reports]
@@ -272,15 +278,41 @@ def holdout_evaluation(
         test_failures, store, k=k, rc_truth=rc_map, indexed_types=indexed_types
     )
 
+    cache: dict[str, dict] = {}
+    cache_file = Path(cache_path) if cache_path else None
+    if cache_file and cache_file.exists():
+        try:
+            cache = json.loads(cache_file.read_text())
+        except ValueError:
+            cache = {}
+    cache_key = f"{agent.backend}|{holdout}|{k}"
+    if cache.get("_key") not in (None, cache_key):
+        cache = {}  # different agent/split: never mix results
+    cache["_key"] = cache_key
+
     pairs: list[tuple[Failure, str | None, str | None, float]] = []
     sources: Counter[str] = Counter()
+    reused = 0
     for f in test_failures:
+        truth = lookup_root_cause(rc_map, f.failure_id)
+        hit = cache.get(f.failure_id)
+        if hit:
+            reused += 1
+            sources[hit["source"]] += 1
+            pairs.append((f, truth, hit["root_cause_id"], hit["confidence"]))
+            continue
         similar = store.query(f.signature, top_k=k, exclude_failure_id=f.failure_id)
         hyp = agent.generate(f, similar, f.cluster_id)
         sources[hyp.source] += 1
-        pairs.append(
-            (f, lookup_root_cause(rc_map, f.failure_id), hyp.root_cause_id, hyp.confidence)
-        )
+        pairs.append((f, truth, hyp.root_cause_id, hyp.confidence))
+        if cache_file:
+            cache[f.failure_id] = {
+                "root_cause_id": hyp.root_cause_id,
+                "confidence": hyp.confidence,
+                "source": hyp.source,
+            }
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(cache))
 
     # Restore the full index for downstream users of the store.
     store.index(
@@ -297,6 +329,7 @@ def holdout_evaluation(
         "retrieval": retrieval,
         "root_cause": root_cause_metrics(pairs),
         "hypothesis_sources": dict(sources),
+        "hypotheses_reused_from_cache": reused,
     }
 
 
@@ -313,6 +346,7 @@ def evaluate(
     agent: HypothesisAgent | None = None,
     holdout: float = 0.3,
     k: int = 5,
+    cache_path: str | Path | None = None,
 ) -> dict:
     """Compute the full metrics bundle."""
     report: dict = {
@@ -323,7 +357,9 @@ def evaluate(
         "clustering": cluster_quality(result, embedder, root_cause_map(labels)),
     }
     if store is not None and agent is not None:
-        ho = holdout_evaluation(result, labels, store, agent, holdout=holdout, k=k)
+        ho = holdout_evaluation(
+            result, labels, store, agent, holdout=holdout, k=k, cache_path=cache_path
+        )
         report["holdout"] = ho
         if "retrieval" in ho:
             report["retrieval"] = ho["retrieval"]

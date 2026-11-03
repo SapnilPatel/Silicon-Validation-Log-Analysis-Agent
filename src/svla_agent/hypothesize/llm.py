@@ -35,7 +35,12 @@ class AnthropicProvider:
         if self._client is None:
             import anthropic
 
-            self._client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
+            # A hung request must fail fast and be retried, never stall a batch for hours.
+            self._client = anthropic.Anthropic(
+                api_key=self.settings.anthropic_api_key,
+                timeout=self.settings.llm_timeout_s,
+                max_retries=3,
+            )
         return self._client
 
     def structured(self, *, system: str, prompt: str, tool: dict[str, Any]) -> dict[str, Any]:

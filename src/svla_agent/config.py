@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     llm_model: str = "claude-opus-5-5"
     llm_max_tokens: int = 4096  # thinking is on by default on current models; leave room
     llm_effort: str = "medium"  # low | medium | high | xhigh | max
+    llm_timeout_s: float = 120.0  # per-request HTTP timeout (SDK retries up to 3x)
 
     # --- Embeddings ---
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"

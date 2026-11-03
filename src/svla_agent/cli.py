@@ -157,6 +157,7 @@ def evaluate_cmd(
         agent=pipeline.agent,
         holdout=settings.eval_holdout if holdout is None else holdout,
         k=settings.rag_top_k,
+        cache_path=out.with_suffix(".hypcache.json") if out else None,
     )
     _print_metrics(metrics)
     if out:
