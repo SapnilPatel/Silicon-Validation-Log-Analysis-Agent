@@ -34,6 +34,7 @@ API and an interactive dashboard.
 ## ✨ Highlights
 
 - **Root cause, not just failure type** — a catalogue of 20 named root causes across 6 failure types; the agent scores them against the evidence and cites the tell-tale lines.
+- **An agent that investigates** — in agentic mode Claude pulls log lines around the failure from any subsystem, reads register dumps and stack traces, searches past incidents and looks up the catalogue in a bounded tool loop, then answers; every step is kept as a trace. [Details ↓](#-agentic-mode)
 - **Measured** — on a 400-run hold-out corpus: detection / typing F1 **1.00**, retrieval recall@5 **1.00**, root-cause top-1 **0.96** (rules) / **0.94** (Claude). [Details ↓](#-evaluation)
 - **Calibrated confidence** — when Claude is wrong its confidence drops to **0.47** (rules: 0.77), so the number is usable for triage.
 - **Fast & streaming** — 1.45 M log events (97 MB, 700 files) parsed, template-mined and classified in **23 s** on a laptop, ~64 k events/s, flat memory.
@@ -48,6 +49,7 @@ API and an interactive dashboard.
 - [Quickstart](#-quickstart)
 - [CLI & REST API](#-cli--rest-api)
 - [Enabling Claude](#-enabling-claude)
+- [Agentic mode](#-agentic-mode)
 - [Evaluation](#-evaluation)
 - [Example report](#-example-report)
 - [Dataset](#-dataset)
@@ -80,7 +82,7 @@ flowchart LR
 | **Embed** | `embeddings/embedder.py` | sentence-transformers embeddings (deterministic hashing fallback offline) |
 | **Cluster** | `cluster/clusterer.py` | HDBSCAN within each failure type → explainable failure families |
 | **RAG** | `rag/` | Pluggable vector store (`chroma` persistent, `memory` numpy) over historical failures |
-| **Hypothesize** | `hypothesize/` | Root-cause catalogue + evidence scoring; Claude tool-use picks among the same candidates |
+| **Hypothesize** | `hypothesize/` | Root-cause catalogue + evidence scoring; Claude picks among the same candidates, or investigates with tools in agentic mode |
 | **Report** | `report/reporter.py` | Jinja2 Markdown + JSON debug reports |
 | **Serve** | `api.py`, `app/streamlit_app.py` | FastAPI REST service and Streamlit dashboard |
 | **Evaluate** | `eval/metrics.py` | Detection, typing, clustering, hold-out retrieval and root-cause accuracy |
@@ -166,6 +168,34 @@ retrieved incidents, and return the same `Hypothesis` shape (including a
 | `SVLA_CHROMA_DIR` / `SVLA_REPORTS_DIR` | `.chroma` / `reports` | Store and report locations |
 
 Full list in [.env.example](.env.example).
+
+## 🕵️ Agentic mode
+
+The default LLM path is one structured call: Claude gets the evidence, the candidate
+root causes and the retrieved incidents, and answers. In **agentic mode** it gets tools
+instead and decides what to look at:
+
+| Tool | What it returns |
+|---|---|
+| `get_context(start_ms, end_ms, include_info, subsystem)` | Log lines from any subsystem in a time window, telemetry optional |
+| `read_block(ts_ms)` | The full register dump / stack trace attached to the nearest error |
+| `search_incidents(query, top_k)` | Similar resolved failures from the vector store, with their root causes |
+| `lookup_catalogue()` | Known root causes for the failure type with their tell-tale markers and playbook |
+| `submit_hypothesis(...)` | The answer: root-cause id, statement, calibrated confidence, rationale, actions |
+
+```bash
+svla process --run 000005 --agentic          # or SVLA_LLM_MODE=agentic
+svla eval --llm --agentic --out reports/metrics_agentic.json
+```
+
+The loop is bounded (`SVLA_AGENT_MAX_TURNS`, default 8), uses `tool_choice: auto`
+with strict schemas, returns all of a turn's tool results in one message, and
+falls back to the rule-based agent on refusal or failure. Every call is recorded
+on the hypothesis as a trace and shown in the Markdown report, the dashboard's
+"Agent investigation" panel, the REST response and the project site's explorer.
+A typical investigation on the synthetic corpus is 5–6 tool calls and ~27 s:
+catalogue → the window before the first error across all subsystems → the
+subsystem's telemetry → the dump → answer with the actual numbers quoted.
 
 ## 📏 Evaluation
 

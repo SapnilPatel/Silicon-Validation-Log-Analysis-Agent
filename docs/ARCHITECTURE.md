@@ -69,6 +69,20 @@ RunFiles ─▶ ParsedRun ─▶ [Failure] ─▶ dedup + clustered [Failure] �
   catalogue) sees the same evidence, candidates and incidents. Output shape is
   identical either way, including a `root_cause_id` that evaluation can score.
 
+#### Agentic mode (`SVLA_LLM_MODE=agentic`, `--agentic`)
+- `hypothesize/tools.py` exposes the run to the model as tools: `get_context`
+  (lines in a time window, any subsystem, telemetry optional), `read_block`
+  (the full register dump / stack trace nearest a timestamp), `lookup_catalogue`
+  (root causes + tell-tales + playbook) and `search_incidents` (free-text query
+  against the vector store).
+- `AnthropicProvider.run_agent` runs a bounded tool loop (`agent_max_turns`,
+  default 8): `tool_choice` auto, strict schemas, all tool results of a turn
+  returned in one user message, a budget nudge before the last turn, and a final
+  turn where only `submit_hypothesis` is offered. Refusals and loop failures
+  fall back to the rule-based agent.
+- Every call is recorded as a `ToolCall` on `Hypothesis.trace` and rendered in
+  the Markdown report, the dashboard and the API response.
+
 ### 7. Report — `report/reporter.py`
 - Renders each `RunReport` to Markdown (Jinja2 template
   `report/templates/run_report.md.j2`) and JSON.

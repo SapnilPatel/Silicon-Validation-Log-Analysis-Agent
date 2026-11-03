@@ -369,7 +369,9 @@ def render_failure(f: dict, hyp: dict | None, key: str = "detail") -> None:
             for a in hyp["recommended_actions"]:
                 st.markdown(f"- {a}")
         if hyp.get("trace"):
-            with st.expander(f"Agent investigation · {len(hyp['trace'])} tool calls", expanded=False):
+            with st.expander(
+                f"Agent investigation · {len(hyp['trace'])} tool calls", expanded=False
+            ):
                 for t in hyp["trace"]:
                     if t.get("note"):
                         st.markdown(f"_{t['note']}_")

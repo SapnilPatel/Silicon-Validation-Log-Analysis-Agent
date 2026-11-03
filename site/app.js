@@ -21,7 +21,7 @@
     ["Classify", "rules · evidence", "<b>classify/classifier.py</b> turns ERROR/FATAL events into prioritised failures with the distinct WARN context from any subsystem in the window before the first error — where root-cause tell-tales live. A fingerprint counts recurrences across the corpus."],
     ["Cluster", "HDBSCAN", "<b>cluster/clusterer.py</b> embeds signatures (sentence-transformers, hashing fallback offline) and runs HDBSCAN within each failure type, so families are explainable sub-groups — typically root causes."],
     ["Retrieve", "RAG", "<b>rag/</b> indexes historical failures with their known root causes in a pluggable vector store (Chroma persistent or in-memory) and returns the closest past incidents for each new failure."],
-    ["Hypothesize", "Claude · rules", "<b>hypothesize/</b> scores a catalogue of named root causes: evidence markers weigh most, similarity-weighted votes from retrieved incidents next, the type prior last. Claude receives the same evidence, candidates and incidents via a strict tool call; both paths return the same shape."],
+    ["Hypothesize", "agent · rules", "<b>hypothesize/</b> names a specific root cause. Rule-based: evidence markers from the catalogue weigh most, similarity-weighted votes from retrieved incidents next, the type prior last. Direct LLM: Claude gets the same evidence and candidates in one strict tool call. <b>Agentic</b>: Claude investigates with tools — get_context, read_block, search_incidents, lookup_catalogue — in a bounded loop and submits when it has seen enough; the trace is kept. All three return the same Hypothesis shape."],
     ["Report", "MD · JSON · API", "<b>report/</b> renders Markdown and JSON per run; the FastAPI service, the CLI and the Streamlit dashboard all read the same objects."],
   ];
 
@@ -188,6 +188,10 @@
         html += `<h4>Root-cause hypothesis</h4><div class="hyp"><div class="rc">${esc(h.root_cause)}${h.root_cause_id ? `<span class="rcid">${h.root_cause_id}</span>` : ""}</div>
           <div class="conf"><div class="bar"><i style="width:${Math.round(h.confidence * 100)}%"></i></div><span>${pct(h.confidence)} · <span class="src">${esc(h.source)}</span></span></div>
           <p class="why">${esc(h.rationale)}</p><ol>${h.recommended_actions.map((a) => `<li>${esc(a)}</li>`).join("")}</ol>`;
+        if (h.trace?.length) {
+          html += `<h4 style="margin-top:12px">Agent investigation · ${h.trace.length} tool calls <span class="muted">(what Claude looked at before answering)</span></h4><ol class="trace">` +
+            h.trace.map((t) => `<li>${t.note ? `<p class="note">${esc(t.note)}</p>` : ""}<code class="call">${esc(t.tool)}(${esc(Object.entries(t.input || {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", "))})</code><pre class="evidence small">${esc((t.output || "").slice(0, 700))}${(t.output || "").length > 700 ? "\n…" : ""}</pre></li>`).join("") + `</ol>`;
+        }
         if (h.similar_incidents?.length) html += `<h4 style="margin-top:12px">Similar historical incidents (RAG)</h4><table class="sim"><thead><tr><th>run</th><th>type</th><th>root cause</th><th>similarity</th></tr></thead><tbody>${h.similar_incidents.map((s) => `<tr><td class="mono">${esc(s.run_id)}</td><td>${esc(s.failure_type)}</td><td class="mono">${esc(s.root_cause_id || "—")}</td><td>${fmt(1 - s.distance, 3)}</td></tr>`).join("")}</tbody></table>`;
         html += `</div>`;
       }

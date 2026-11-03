@@ -9,12 +9,12 @@ This page tracks each promise against what the repository actually ships.
 | Streaming ingest of files / directories / compressed archives | ✅ (`.log`, `.log.gz`, recursive dirs) | `ingest/reader.py` |
 | Failure classification **and deduplication** | ✅ per-run typing + corpus fingerprint dedup | `classify/classifier.py` |
 | Pattern clustering (HDBSCAN + scikit-learn) | ✅ within-type HDBSCAN families | `cluster/clusterer.py` |
-| Root-cause hypotheses with LLMs | ✅ Claude via tool-use; pluggable provider interface. OpenAI/Llama: **not shipped** (interface ready) | `hypothesize/agent.py`, `hypothesize/llm.py` |
+| Root-cause hypotheses with LLMs | ✅ Claude via tool-use, plus an **agentic mode** where Claude investigates with tools and leaves a trace; pluggable provider interface. OpenAI/Llama: **not shipped** (interface ready) | `hypothesize/agent.py`, `hypothesize/tools.py`, `hypothesize/llm.py` |
 | RAG over historical failures (Chroma / Pinecone) | ✅ Chroma + in-memory backends behind one interface. Pinecone: **not shipped** (needs an account) | `rag/` |
 | Markdown reports (Jinja2) + JSON | ✅ | `report/` |
 | Streamlit demo | ✅ 5-tab dashboard incl. live analysis & evaluation | `app/streamlit_app.py` |
 | FastAPI service | ✅ `svla serve` | `api.py` |
-| LangGraph orchestration | ❌ **deliberately dropped** - the pipeline is a fixed DAG; a plain orchestrator is simpler and fully testable | `pipeline.py` |
+| LangGraph orchestration | ❌ **deliberately dropped** - the pipeline is a fixed DAG; a plain orchestrator is simpler and fully testable. The *agent* part lives in the hypothesis loop instead | `pipeline.py`, `hypothesize/llm.py` |
 | Synthetic dataset + generator | ✅ generator with per-root-cause evidence; 24-run sample committed | `datagen/generator.py`, `examples/` |
 | Metrics: silhouette, Davies-Bouldin, recall@k, hypothesis accuracy | ✅ + purity/homogeneity, MRR, root-cause top-1 on a hold-out split | `eval/metrics.py` |
 | PII / secret redaction before indexing | ✅ on by default | `privacy/redact.py` |
