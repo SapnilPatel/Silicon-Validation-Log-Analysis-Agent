@@ -115,6 +115,7 @@ svla generate   Generate the synthetic silicon-log dataset
 svla process    Run the full analysis pipeline and write debug reports
 svla index      (Re)build the RAG vector store of historical failures
 svla eval       Evaluate against ground truth (hold-out retrieval + root cause)
+svla import-bgl Convert the real Loghub BGL log into runs for out-of-distribution eval
 svla serve      Serve the REST API (FastAPI + uvicorn)
 svla version    Print the version
 ```
@@ -215,6 +216,25 @@ svla eval --logs data/eval/logs --labels data/eval/labels --out reports/metrics.
 # with ANTHROPIC_API_KEY set, the same command scores Claude as the agent
 ```
 
+### Out-of-distribution: real supercomputer logs
+
+To test the pipeline on data it was never designed around, `svla import-bgl` turns
+the real Loghub **BGL** log (4.75 M lines, 215 days, operator-assigned alert labels)
+into 2,906 thirty-minute windows and runs the unchanged pipeline on them:
+
+| Metric (BGL, 968 held-out windows) | Result |
+|---|:---:|
+| Window anomaly detection P / R / F1 | 0.64 / 1.00 / 0.78 |
+| Retrieval recall@5 (same alert tag) | 0.84 |
+| Alert tag named by retrieval alone, top-1 (no catalogue) | **0.71** |
+| Cluster purity vs. alert tag | 0.82 |
+
+Recall transfers, precision does not: BGL logs many routine `FATAL` lines that
+operators never flagged, so severity alone over-flags. Retrieval generalises:
+with zero domain knowledge the nearest past windows name the operators' alert
+tag 71% of the time (92% for application alerts). Full method, per-family
+breakdown and what it implies: [docs/EVALUATION_OOD.md](docs/EVALUATION_OOD.md).
+
 ## 📄 Example report
 
 ```
@@ -284,6 +304,7 @@ FastAPI · Streamlit / Plotly · pytest / ruff / mypy · Docker · Streamlit Com
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow, stage responsibilities, schemas, evaluation design |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | GitHub Pages site, Streamlit Community Cloud, Docker, Hugging Face, REST API usage |
+| [docs/EVALUATION_OOD.md](docs/EVALUATION_OOD.md) | Out-of-distribution evaluation on real Loghub BGL logs |
 | [docs/VISION.md](docs/VISION.md) | Every original project goal and how it was delivered |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, conventions, how to add backends / root causes |
 

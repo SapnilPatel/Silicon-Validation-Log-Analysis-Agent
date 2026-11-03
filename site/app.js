@@ -119,6 +119,28 @@
     hbar($("#rc-chart"), bars, { valueFmt: (v) => Math.round(v), unit: "%", max: 100 });
   }
 
+  function renderOOD(b) {
+    const m = b.metrics;
+    const cols = [["bgl_sentence_transformers", "transformers"], ["bgl_hashing", "hashing (offline)"]].filter(([k]) => m[k]);
+    if (!cols.length) { $("#ood-lede").textContent = "No out-of-distribution metrics in this build."; return; }
+    const any = m[cols[0][0]], ho = any.holdout || {};
+    const get = (k, path) => path.split(".").reduce((o, p) => (o == null ? undefined : o[p]), m[k]);
+    $("#ood-lede").textContent = `Loghub BGL (BlueGene/L): 4.75 M real log lines with operator-assigned alert labels, cut into ${any.n_runs.toLocaleString()} thirty-minute windows and run through the unchanged pipeline; ${ho.test_runs?.toLocaleString() ?? "—"} windows held out.`;
+    const rows = [
+      ["Window anomaly detection P / R / F1", (k) => `${fmt(get(k, "detection.precision"))} / ${fmt(get(k, "detection.recall"))} / ${fmt(get(k, "detection.f1"))}`],
+      ["Retrieval recall@5 (same component) / MRR", (k) => `${fmt(get(k, "retrieval.recall_at_k"))} / ${fmt(get(k, "retrieval.mrr"))}`],
+      ["Retrieval recall@5 (same alert tag)", (k) => fmt(get(k, "retrieval.root_cause_recall_at_k"))],
+      ["Alert tag by retrieval alone, top-1", (k) => `${fmt(get(k, "root_cause.accuracy"))} (n=${get(k, "root_cause.n") ?? "—"})`, true],
+      ["Mean confidence when right / wrong", (k) => `${fmt(get(k, "root_cause.mean_confidence_correct"))} / ${fmt(get(k, "root_cause.mean_confidence_wrong"))}`],
+      ["Cluster purity vs. alert tag", (k) => fmt(get(k, "clustering.purity_vs_root_cause"))],
+    ];
+    $("#ood-table").innerHTML = `<thead><tr><th>Metric</th>${cols.map(([, n]) => `<th>${n}</th>`).join("")}</tr></thead><tbody>` +
+      rows.map(([label, f, hl]) => `<tr class="${hl ? "hl" : ""}"><td>${label}</td>${cols.map(([k]) => `<td>${f(k)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    const per = any.root_cause?.per_type || {};
+    const bars = Object.entries(per).sort((a, b) => b[1].total - a[1].total).map(([t, v]) => ({ label: t.replace("_FAILURE", ""), value: v.accuracy * 100, color: "#3987e5", tip: `<b>${t}</b><br>${v.correct} of ${v.total} held-out windows named correctly` }));
+    hbar($("#ood-chart"), bars, { valueFmt: (v) => Math.round(v), unit: "%", max: 100 });
+  }
+
   function renderCatalogue(b) {
     $("#catalogue-grid").innerHTML = Object.entries(b.knowledge).filter(([t]) => t !== "UNKNOWN_FAILURE").map(([t, k]) => `
       <article class="cat" style="--c:${color(t)}"><h3>${t}</h3><p class="prior">${esc(k.prior.root_cause)}</p>
@@ -186,7 +208,7 @@
   // ---------- boot ----------
   fetch("data/bundle.json").then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); }).then((b) => {
     window.__bundle = b; reports = b.reports;
-    renderHero(b); renderPipeline(); renderResults(b); renderCatalogue(b); renderOverview(); renderRunList();
+    renderHero(b); renderPipeline(); renderResults(b); renderOOD(b); renderCatalogue(b); renderOverview(); renderRunList();
     $("#only-anomalous").addEventListener("change", renderRunList); $("#type-filter").addEventListener("change", renderRunList);
     const first = reports.find((r) => r.anomalous) || reports[0]; if (first) selectRun(first.run_id);
   }).catch((err) => { console.error("SVLA site failed to render:", err); $("#run-detail").innerHTML = `<p class="empty">Could not load data bundle (${esc(err.message)}). Run <code>python scripts/build_site.py</code>.</p>`; renderPipeline(); });

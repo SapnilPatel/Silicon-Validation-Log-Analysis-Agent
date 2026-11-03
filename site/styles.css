@@ -103,6 +103,8 @@ svg.chart .grid { stroke: var(--border); stroke-dasharray: 2 4; }
 svg.chart rect.bar { rx: 3; }
 svg.chart .hit { fill: transparent; }
 
+h3.sub { margin: 36px 0 6px; font-size: 1.2rem; }
+
 /* explorer */
 .explorer { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
 .run-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; position: sticky; top: 76px; max-height: calc(100vh - 100px); display: flex; flex-direction: column; }
