@@ -9,6 +9,7 @@ enriched with nearby ``WARN`` context as evidence, and assigned a severity.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Iterable
 
 from ..config import get_settings
@@ -68,7 +69,13 @@ def classify_event(event: Event) -> str | None:
     for failure_type, keywords in _RULES:
         if any(kw in haystack for kw in keywords):
             return failure_type
-    return _SUBSYS_FALLBACK.get(event.subsys.upper(), "UNKNOWN_FAILURE")
+    subsys = event.subsys.upper()
+    if subsys in _SUBSYS_FALLBACK:
+        return _SUBSYS_FALLBACK[subsys]
+    # Unknown subsystem (e.g. a log format we have no catalogue for): still give
+    # a stable, component-level type so clustering and retrieval stay meaningful.
+    token = re.sub(r"[^A-Z0-9]+", "_", subsys).strip("_") or "UNKNOWN"
+    return f"{token}_FAILURE"
 
 
 def _severity_for(events: list[Event]) -> Severity:

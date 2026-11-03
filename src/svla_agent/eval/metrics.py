@@ -30,7 +30,7 @@ from sklearn.metrics import (
 
 from ..embeddings.embedder import Embedder
 from ..hypothesize.agent import HypothesisAgent
-from ..labels import root_cause_map
+from ..labels import lookup_root_cause, root_cause_map
 from ..models import Failure
 from ..pipeline import PipelineResult
 from ..rag.base import BaseVectorStore
@@ -83,7 +83,15 @@ def failure_type_metrics(result: PipelineResult, labels: dict[str, dict]) -> dic
 
     per_type = {t: _prf(tp[t], fp[t], fn[t]) for t in sorted(set(tp) | set(fp) | set(fn))}
     total = _prf(sum(tp.values()), sum(fp.values()), sum(fn.values()))
-    return {"micro": total, "per_type": per_type}
+    out: dict = {"micro": total, "per_type": per_type}
+    predicted = {f.failure_type for r in result.reports for f in r.failures}
+    truth_types = {t for lab in labels.values() for t in lab.get("failure_types", [])}
+    if predicted and truth_types and not (predicted & truth_types):
+        out["note"] = (
+            "label vocabulary does not overlap the classifier's failure types "
+            "(out-of-distribution dataset); typing scores are not meaningful here"
+        )
+    return out
 
 
 def cluster_quality(
@@ -119,9 +127,9 @@ def cluster_quality(
     # Clusters tend to land at root-cause granularity; score that too when labels exist.
     if rc_truth:
         pairs: list[tuple[int, str]] = [
-            (int(cid), str(rc_truth[f.failure_id]))
+            (int(cid), str(lookup_root_cause(rc_truth, f.failure_id)))
             for cid, f in zip(cluster_ids, failures, strict=True)
-            if rc_truth.get(f.failure_id)
+            if lookup_root_cause(rc_truth, f.failure_id)
         ]
         if len(pairs) >= 3:
             cids = [c for c, _ in pairs]
@@ -180,7 +188,7 @@ def retrieval_recall_at_k(
             if ranks:
                 type_hits += 1
                 rr_sum += 1.0 / (ranks[0] + 1)
-        truth_rc = rc_truth.get(f.failure_id)
+        truth_rc = lookup_root_cause(rc_truth, f.failure_id)
         if truth_rc:
             rc_considered += 1
             if any(inc.root_cause_id == truth_rc for inc in incidents):
@@ -254,7 +262,10 @@ def holdout_evaluation(
         return {"note": "hold-out split produced an empty side"}
 
     store.reset()
-    store.index(train_failures, {f.failure_id: rc_map.get(f.failure_id) for f in train_failures})
+    store.index(
+        train_failures,
+        {f.failure_id: lookup_root_cause(rc_map, f.failure_id) for f in train_failures},
+    )
     indexed_types = Counter(f.failure_type for f in train_failures)
 
     retrieval = retrieval_recall_at_k(
@@ -267,10 +278,15 @@ def holdout_evaluation(
         similar = store.query(f.signature, top_k=k, exclude_failure_id=f.failure_id)
         hyp = agent.generate(f, similar, f.cluster_id)
         sources[hyp.source] += 1
-        pairs.append((f, rc_map.get(f.failure_id), hyp.root_cause_id, hyp.confidence))
+        pairs.append(
+            (f, lookup_root_cause(rc_map, f.failure_id), hyp.root_cause_id, hyp.confidence)
+        )
 
     # Restore the full index for downstream users of the store.
-    store.index(test_failures, {f.failure_id: rc_map.get(f.failure_id) for f in test_failures})
+    store.index(
+        test_failures,
+        {f.failure_id: lookup_root_cause(rc_map, f.failure_id) for f in test_failures},
+    )
 
     return {
         "holdout_fraction": holdout,

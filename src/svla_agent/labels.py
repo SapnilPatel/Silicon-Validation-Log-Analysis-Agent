@@ -41,4 +41,16 @@ def root_cause_map(labels: dict[str, dict]) -> dict[str, str | None]:
                 out[f"{run_id}:{ftype}"] = pat.get("root_cause_id")
         for ftype in data.get("failure_types", []):
             out.setdefault(f"{run_id}:{ftype}", data.get("root_cause_id"))
+        # Run-level fallback: lets datasets whose labels are not keyed by our
+        # failure types (e.g. BGL alert tags) still score retrieval/clustering.
+        if data.get("root_cause_id"):
+            out.setdefault(run_id, data["root_cause_id"])
     return out
+
+
+def lookup_root_cause(rc_map: dict[str, str | None], failure_id: str) -> str | None:
+    """Root cause for a failure id, falling back to its run-level label."""
+    rc = rc_map.get(failure_id)
+    if rc:
+        return rc
+    return rc_map.get(failure_id.split(":", 1)[0])

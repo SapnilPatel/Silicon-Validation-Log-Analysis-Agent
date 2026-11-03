@@ -152,6 +152,47 @@ def evaluate_cmd(
         console.print(f"[green]Wrote[/green] metrics to {out}")
 
 
+@app.command(name="import-bgl")
+def import_bgl(
+    src: Path | None = typer.Option(None, help="Path to BGL.log (Loghub). Omit with --download."),
+    download: bool = typer.Option(
+        False, "--download", help="Fetch BGL.zip from Zenodo into data/bgl_raw."
+    ),
+    out: Path = typer.Option(
+        Path("data/bgl"), help="Output root (creates silicon_logs/ and labels/)."
+    ),
+    window_min: int = typer.Option(30, help="Window length in minutes (one run per window)."),
+    limit: int | None = typer.Option(None, help="Stop after N windows."),
+    min_lines: int = typer.Option(20, help="Skip windows with fewer lines."),
+) -> None:
+    """Convert the real Loghub BGL supercomputer log into runs + labels (OOD evaluation)."""
+    _init()
+    from .datasets.bgl import convert
+    from .datasets.bgl import download as _download
+
+    if download:
+        with console.status("Downloading BGL.zip from Zenodo (57 MB)..."):
+            src = _download("data/bgl_raw")
+    if src is None or not Path(src).exists():
+        raise typer.BadParameter("Provide --src path/to/BGL.log or use --download")
+    with console.status(f"Converting {src} into {window_min}-minute windows..."):
+        stats = convert(
+            src,
+            out / "silicon_logs",
+            out / "labels",
+            window_s=window_min * 60,
+            limit=limit,
+            min_lines=min_lines,
+        )
+    table = Table(title="BGL import")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    for k, v in stats.items():
+        table.add_row(k, f"{v:,}")
+    console.print(table)
+    console.print(f"Next: [bold]svla eval --logs {out}/silicon_logs --labels {out}/labels[/bold]")
+
+
 @app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", help="Bind address."),
