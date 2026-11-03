@@ -76,7 +76,10 @@ class Embedder:
     def dim(self) -> int:
         self._ensure_model()
         if self._model is not None:
-            return int(self._model.get_sentence_embedding_dimension())
+            getter = getattr(self._model, "get_embedding_dimension", None) or (
+                self._model.get_sentence_embedding_dimension
+            )
+            return int(getter())
         return _HASH_DIM
 
     # -- encoding ----------------------------------------------------------- #
