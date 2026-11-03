@@ -39,15 +39,22 @@ class AnthropicProvider:
         return self._client
 
     def structured(self, *, system: str, prompt: str, tool: dict[str, Any]) -> dict[str, Any]:
+        # Current Claude models reject forced tool_choice and sampling params, so the
+        # tool is strict (schema-exact arguments) with tool_choice "auto", and the
+        # prompt itself asks for the call. Thinking stays on; effort controls depth.
+        strict_tool = {**tool, "strict": True}
+        strict_tool["input_schema"] = {**tool["input_schema"], "additionalProperties": False}
         response = self.client.messages.create(
             model=self.settings.llm_model,
             max_tokens=self.settings.llm_max_tokens,
-            temperature=self.settings.llm_temperature,
             system=system,
-            tools=[tool],
-            tool_choice={"type": "tool", "name": tool["name"]},
+            tools=[strict_tool],
+            tool_choice={"type": "auto"},
+            output_config={"effort": self.settings.llm_effort},
             messages=[{"role": "user", "content": prompt}],
         )
+        if getattr(response, "stop_reason", None) == "refusal":
+            raise RuntimeError("model declined the request (stop_reason=refusal)")
         return extract_tool_input(response)
 
 

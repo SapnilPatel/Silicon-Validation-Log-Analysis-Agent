@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     # --- LLM ---
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     llm_provider: str = "anthropic"  # pluggable; see hypothesize/llm.py
-    llm_model: str = "claude-opus-4-8"
-    llm_max_tokens: int = 1024
-    llm_temperature: float = 0.0
+    llm_model: str = "claude-opus-5-5"
+    llm_max_tokens: int = 4096  # thinking is on by default on current models; leave room
+    llm_effort: str = "medium"  # low | medium | high | xhigh | max
 
     # --- Embeddings ---
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"

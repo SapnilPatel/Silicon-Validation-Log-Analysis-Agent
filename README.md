@@ -128,7 +128,7 @@ retrieved incidents, and return the same `Hypothesis` shape (including a
 | Setting | Default | Purpose |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | _unset_ | Enables Claude; unset ⇒ rule-based hypotheses |
-| `SVLA_LLM_MODEL` | `claude-opus-4-8` | Hypothesis model |
+| `SVLA_LLM_MODEL` | `claude-opus-5-5` | Hypothesis model (`SVLA_LLM_EFFORT` sets thinking depth, default `medium`) |
 | `SVLA_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model |
 | `SVLA_VECTOR_BACKEND` | `chroma` | `chroma` (persistent) or `memory` (numpy, file-backed) |
 | `SVLA_REDACT` | `1` | PII / secret redaction at parse time |
