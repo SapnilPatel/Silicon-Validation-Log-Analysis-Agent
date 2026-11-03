@@ -1,34 +1,73 @@
-# SVLA-Agent
+<div align="center">
+
+# 🔬 SVLA-Agent
+
+**Silicon Validation Log Analysis Agent** — an agentic AI debug assistant for post-silicon validation logs.
 
 [![CI](https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent/actions/workflows/ci.yml)
 [![Live demo](https://img.shields.io/badge/live%20demo-svla--agent.streamlit.app-FF4B4B?logo=streamlit&logoColor=white)](https://svla-agent.streamlit.app/)
-[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.12-blue)](#)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
-[![Code style: ruff](https://img.shields.io/badge/lint-ruff-orange)](https://github.com/astral-sh/ruff)
+[![Python](https://img.shields.io/badge/python-3.10%E2%80%933.12-3776AB?logo=python&logoColor=white)](#quickstart)
+[![Claude](https://img.shields.io/badge/LLM-Claude%20opus--5--5-D97757?logo=anthropic&logoColor=white)](#enabling-claude)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-orange)](https://github.com/astral-sh/ruff)
 
-**Silicon Validation Log Analysis Agent** — an agentic AI debug assistant for
-post-silicon validation logs. SVLA-Agent ingests large multi-source silicon test
-logs, parses them into structured events, classifies and de-duplicates failures,
-clusters recurring failure families, retrieves similar historical incidents (RAG),
-and names a specific, evidence-backed root cause with remediation steps — as
-Markdown/JSON debug reports, a REST API and an interactive dashboard.
+### 🚀 [**Open the live demo → svla-agent.streamlit.app**](https://svla-agent.streamlit.app/)
 
-> **Live demo:** https://svla-agent.streamlit.app/ — browse the bundled runs, open a report,
-> run a live analysis or upload your own logs. Hosting options (Streamlit Community Cloud,
-> Docker, Hugging Face PRO) are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
->
-> The whole pipeline runs **offline** out of the box (deterministic fallbacks for
-> embeddings, retrieval and hypotheses). Add an `ANTHROPIC_API_KEY` — or paste one
-> in the dashboard sidebar — to upgrade the hypothesis agent to Claude.
+Browse analysed runs, open a debug report, run a live analysis, or upload your own logs.<br>
+Paste your own Anthropic key in the sidebar to switch the hypothesis agent to Claude — nothing is stored.
+
+</div>
 
 ---
 
-## What it does
+SVLA-Agent ingests large multi-source silicon test logs, parses them into structured
+events, classifies and de-duplicates failures, clusters recurring failure families,
+retrieves similar historical incidents (RAG), and names a **specific, evidence-backed
+root cause** with remediation steps — delivered as Markdown/JSON debug reports, a REST
+API and an interactive dashboard.
 
-```
-raw logs ─▶ ingest ─▶ parse ─▶ classify ─▶ cluster ─▶ RAG ─▶ hypothesize ─▶ report
-          (stream)  (Drain3   (rules +   (HDBSCAN   (Chroma /  (Claude /    (MD / JSON /
-                    +redact)   dedup)     per type)  memory)    rule-based)  API / UI)
+> The whole pipeline runs **offline** out of the box (deterministic fallbacks for
+> embeddings, retrieval and hypotheses). Add an `ANTHROPIC_API_KEY` to upgrade the
+> hypothesis agent to Claude.
+
+## ✨ Highlights
+
+- **Root cause, not just failure type** — a catalogue of 20 named root causes across 6 failure types; the agent scores them against the evidence and cites the tell-tale lines.
+- **Measured** — on a 400-run hold-out corpus: detection / typing F1 **1.00**, retrieval recall@5 **1.00**, root-cause top-1 **0.96** (rules) / **0.94** (Claude). [Details ↓](#-evaluation)
+- **Calibrated confidence** — when Claude is wrong its confidence drops to **0.47** (rules: 0.77), so the number is usable for triage.
+- **Fast & streaming** — 1.45 M log events (97 MB, 700 files) parsed, template-mined and classified in **23 s** on a laptop, ~64 k events/s, flat memory.
+- **Privacy first** — e-mails, IPs, MACs, serials and credentials are redacted *before* indexing, prompting or reporting.
+- **Pluggable** — vector store (`chroma` / `memory`) and LLM provider behind small interfaces; Claude + Chroma ship.
+- **Three front doors** — `svla` CLI, FastAPI REST service, Streamlit dashboard. Docker image built in CI.
+- **Offline, deterministic tests** — 46 tests incl. the REST API and headless dashboard; CI on Python 3.10–3.12.
+
+## 📚 Contents
+
+- [How it works](#-how-it-works)
+- [Quickstart](#-quickstart)
+- [CLI & REST API](#-cli--rest-api)
+- [Enabling Claude](#-enabling-claude)
+- [Evaluation](#-evaluation)
+- [Example report](#-example-report)
+- [Dataset](#-dataset)
+- [Development](#-development)
+- [Docs](#-docs)
+
+## 🧭 How it works
+
+```mermaid
+flowchart LR
+    A[raw logs<br/><sub>run_*.src.log / .gz</sub>] --> B[Ingest<br/><sub>stream, gzip</sub>]
+    B --> C[Parse<br/><sub>regex + Drain3<br/>+ redaction</sub>]
+    C --> D[Classify<br/><sub>rules, evidence,<br/>dedup</sub>]
+    D --> E[Cluster<br/><sub>HDBSCAN<br/>per type</sub>]
+    E --> F[(RAG store<br/><sub>Chroma / memory</sub>)]
+    F --> G[Hypothesize<br/><sub>Claude or<br/>rule-based</sub>]
+    G --> H[Report<br/><sub>Markdown · JSON</sub>]
+    H --> I[Dashboard · REST API · CLI]
+    L[(ground-truth<br/>labels)] -.-> F
+    L -.-> J[Evaluate<br/><sub>hold-out split</sub>]
+    H -.-> J
 ```
 
 | Stage | Module | What happens |
@@ -45,12 +84,7 @@ raw logs ─▶ ingest ─▶ parse ─▶ classify ─▶ cluster ─▶ RAG �
 | **Serve** | `api.py`, `app/streamlit_app.py` | FastAPI REST service and Streamlit dashboard |
 | **Evaluate** | `eval/metrics.py` | Detection, typing, clustering, hold-out retrieval and root-cause accuracy |
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data flow and schemas, and
-[docs/VISION.md](docs/VISION.md) for how every original project goal was delivered.
-
----
-
-## Quickstart
+## ⚡ Quickstart
 
 ```bash
 git clone https://github.com/SapnilPatel/Silicon-Validation-Log-Analysis-Agent.git
@@ -71,11 +105,9 @@ svla serve            # REST API on http://localhost:8000/docs
 
 A `Makefile` wraps the common flows (`make dev-install data process eval app serve check`),
 and `make docker-build && make docker-api` runs it in a container. See
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Streamlit Cloud, Docker and Hugging Face.
 
----
-
-## CLI
+## 🛠 CLI & REST API
 
 ```
 svla generate   Generate the synthetic silicon-log dataset
@@ -96,8 +128,6 @@ svla eval --holdout 0.3 --out reports/metrics.json
 svla serve --port 8000
 ```
 
-### REST API
-
 | Endpoint | Purpose |
 |---|---|
 | `GET /health` | Active backends (embeddings, store, agent) and index size |
@@ -106,18 +136,16 @@ svla serve --port 8000
 | `POST /analyze/upload` | Analyse uploaded `run_<id>.<source>.log[.gz]` files |
 | `POST /index` · `GET /metrics` · `GET /clusters` · `GET /knowledge` | Index rebuild, eval metrics, families, root-cause catalogue |
 
-Send `X-Anthropic-Key: <your key>` to have that one request use Claude.
+Send `X-Anthropic-Key: <your key>` to have that one request use Claude. Interactive docs at `/docs`.
 
----
-
-## Enabling Claude
+## 🤖 Enabling Claude
 
 By default the root-cause agent uses a deterministic, rule-based fallback so the
 pipeline is fully runnable offline. To use Claude:
 
 ```bash
 cp .env.example .env
-# then set ANTHROPIC_API_KEY in .env (and optionally SVLA_LLM_MODEL)
+# then set ANTHROPIC_API_KEY in .env (and optionally SVLA_LLM_MODEL / SVLA_LLM_EFFORT)
 ```
 
 Both paths see the same evidence, the same root-cause candidates and the same
@@ -137,9 +165,7 @@ retrieved incidents, and return the same `Hypothesis` shape (including a
 
 Full list in [.env.example](.env.example).
 
----
-
-## Evaluation
+## 📏 Evaluation
 
 `svla eval` scores the pipeline against the generator's ground truth. Retrieval
 and root-cause metrics use a **hold-out split**: the RAG index is built from 70%
@@ -151,7 +177,7 @@ uses Claude `claude-opus-5-5` as the hypothesis agent; the other two use the
 deterministic rule-based agent with transformer or hashing embeddings:
 
 | Metric | Claude agent | Rule-based (sentence-transformers) | Rule-based (hashing, offline) |
-|---|---|---|---|
+|---|:---:|:---:|:---:|
 | Anomaly detection P / R / F1 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
 | Failure typing (micro) P / R / F1 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
 | Cluster purity vs. failure type | 1.00 | 1.00 | 1.00 |
@@ -188,9 +214,7 @@ svla eval --logs data/eval/logs --labels data/eval/labels --out reports/metrics.
 # with ANTHROPIC_API_KEY set, the same command scores Claude as the agent
 ```
 
----
-
-## Example report
+## 📄 Example report
 
 ```
 # SVLA Debug Report — Run 000005
@@ -210,9 +234,12 @@ Status: 🔴 ANOMALOUS | Events analysed: 11,079
 - Similar historical incidents: run 000041 (RC_FAN_PROFILE_BAD, sim 0.97), ...
 ```
 
----
+With Claude as the agent the same failure reads, for example: *"The fan ran far
+below its profile target (1537 vs 4014 rpm, about 38%) while the temperature
+climbed, so cooling fell behind and the junction temperature crossed the 105 °C
+trip point before DVFS could recover it."*
 
-## Dataset
+## 🧪 Dataset
 
 The synthetic generator (`svla_agent.datagen.generator`) produces realistic
 multi-source runs (`system`, `fw`, `pcie`, `ddr`, `pmu`, `thermal`, `noc`) with
@@ -232,9 +259,7 @@ ids, and drive both RAG seeding and evaluation. A 24-run gzip sample with
 precomputed reports is committed under `examples/`; `data/` is git-ignored —
 regenerate it with `svla generate`.
 
----
-
-## Development
+## 🧑‍💻 Development
 
 ```bash
 make dev-install     # pip install -e ".[dev,app,api]"
@@ -242,17 +267,24 @@ make check           # ruff + format check + mypy + pytest (offline)
 make test            # pytest only
 ```
 
-The test suite (45 tests) runs fully offline and deterministically against a
+The test suite (46 tests) runs fully offline and deterministically against a
 small generated dataset, including the REST API and headless dashboard tests.
 CI (GitHub Actions) lints, type-checks and tests on Python 3.10–3.12, smokes the
 bundled sample dataset end to end and builds the Docker image. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Tech stack
-
-Python 3.10+ · pydantic / pydantic-settings · Drain3 · sentence-transformers ·
+**Tech stack:** Python 3.10+ · pydantic / pydantic-settings · Drain3 · sentence-transformers ·
 scikit-learn (HDBSCAN) · ChromaDB · Anthropic Claude · Jinja2 · Typer · Rich ·
-FastAPI · Streamlit / Plotly · pytest / ruff / mypy · Docker · Hugging Face Spaces.
+FastAPI · Streamlit / Plotly · pytest / ruff / mypy · Docker · Streamlit Community Cloud.
+
+## 📖 Docs
+
+| Document | Contents |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Data flow, stage responsibilities, schemas, evaluation design |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Streamlit Community Cloud, Docker, Hugging Face, REST API usage |
+| [docs/VISION.md](docs/VISION.md) | Every original project goal and how it was delivered |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, conventions, how to add backends / root causes |
 
 ## License
 
