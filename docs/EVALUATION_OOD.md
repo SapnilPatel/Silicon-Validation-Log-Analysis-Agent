@@ -16,7 +16,7 @@ taxonomy is not ours, and the message vocabulary is different.
 
 ```bash
 svla import-bgl --download --window-min 30      # 4.75 M lines -> 2,906 windows + labels (13 s)
-svla eval --logs data/bgl/silicon_logs --labels data/bgl/labels --out reports/metrics_bgl.json
+svla eval --logs data/bgl/silicon_logs --labels data/bgl/labels --out reports/metrics_bgl.json   # add --llm to score Claude
 ```
 
 - **Windows as runs.** The stream is cut into 30-minute windows (windows with

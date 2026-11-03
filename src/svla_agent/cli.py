@@ -116,6 +116,12 @@ def evaluate_cmd(
         help="Fraction of runs held out for retrieval/root-cause eval (default from settings).",
     ),
     out: Path | None = typer.Option(None, help="Write metrics JSON to this path."),
+    llm: bool = typer.Option(
+        False,
+        "--llm",
+        help="Score Claude as the hypothesis agent (one paid API call per held-out failure). "
+        "Default: the deterministic rule-based agent, even if an API key is configured.",
+    ),
 ) -> None:
     """Evaluate pipeline output against ground-truth labels."""
     _init()
@@ -124,6 +130,13 @@ def evaluate_cmd(
     from .pipeline import AnalysisPipeline
 
     settings = get_settings()
+    if not llm and settings.llm_enabled:
+        settings = settings.model_copy(update={"anthropic_api_key": None})
+        console.print(
+            "[dim]Evaluating with the rule-based agent (pass --llm to score Claude).[/dim]"
+        )
+    elif llm and not settings.llm_enabled:
+        raise typer.BadParameter("--llm needs ANTHROPIC_API_KEY (and SVLA_OFFLINE unset)")
     pipeline = AnalysisPipeline(settings)
     labels_dir = str(labels) if labels else str(settings.labels_dir)
 

@@ -213,7 +213,7 @@ candidates → calibrated confidence → actions) that carries over. Reproduce w
 ```bash
 svla generate --runs 400 --out-logs data/eval/logs --out-labels data/eval/labels --seed 777000
 svla eval --logs data/eval/logs --labels data/eval/labels --out reports/metrics.json
-# with ANTHROPIC_API_KEY set, the same command scores Claude as the agent
+svla eval --llm --logs data/eval/logs --labels data/eval/labels   # score Claude instead (paid, one call per failure)
 ```
 
 ### Out-of-distribution: real supercomputer logs
