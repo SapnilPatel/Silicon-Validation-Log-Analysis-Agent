@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4096  # thinking is on by default on current models; leave room
     llm_effort: str = "medium"  # low | medium | high | xhigh | max
     llm_timeout_s: float = 120.0  # per-request HTTP timeout (SDK retries up to 3x)
+    llm_mode: str = "direct"  # "direct": one structured call; "agentic": tool-using loop
+    agent_max_turns: int = 8  # agentic mode: max model turns before forcing an answer
 
     # --- Embeddings ---
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"

@@ -22,9 +22,11 @@ from typing import Any
 
 from ..config import Settings, get_settings
 from ..logging_config import get_logger
-from ..models import Failure, Hypothesis, RetrievedIncident
+from ..models import Event, Failure, Hypothesis, RetrievedIncident, ToolCall
+from ..rag.base import BaseVectorStore
 from .knowledge import RootCause, candidates_for, prior_for, root_cause_by_id
 from .llm import LLMProvider, make_provider
+from .tools import AgentTools
 
 logger = get_logger(__name__)
 
@@ -35,6 +37,17 @@ _SYSTEM_PROMPT = (
     "Prefer the candidate whose tell-tale evidence actually appears in the log lines; "
     "use historical incidents to break ties. Be concrete and actionable, and ground "
     "your confidence in how well evidence and history agree."
+)
+
+_AGENT_SYSTEM_PROMPT = (
+    "You are a senior post-silicon validation engineer investigating one failure. You have "
+    "tools: get_context (log lines in a time window, any subsystem), read_block (full register "
+    "dump / stack trace), lookup_catalogue (known root causes and their tell-tales) and, when "
+    "available, search_incidents (similar resolved failures). The summary you are given is "
+    "deliberately partial: look before you conclude. Typical investigation: check the "
+    "catalogue, pull the window before the first error across all subsystems, read any dump, "
+    "cross-check history, then call submit_hypothesis with a specific root cause, a calibrated "
+    "confidence and concrete next experiments. Do not call more tools than you need."
 )
 
 _EVIDENCE_WEIGHT = 1.0  # a matched marker
@@ -90,7 +103,9 @@ def _tool_schema(ids: list[str]) -> dict[str, Any]:
                 "rationale",
                 "recommended_actions",
             ],
+            "additionalProperties": False,
         },
+        "strict": True,
     }
 
 
@@ -110,8 +125,19 @@ class HypothesisAgent:
         return self._provider
 
     @property
+    def agentic(self) -> bool:
+        """True when the tool-using loop is configured and an LLM provider is active."""
+        return (
+            self.provider is not None
+            and (self.settings.llm_mode or "direct").lower() == "agentic"
+            and hasattr(self.provider, "run_agent")
+        )
+
+    @property
     def backend(self) -> str:
-        return f"llm:{self.provider.name}" if self.provider else "rule-based"
+        if not self.provider:
+            return "rule-based"
+        return f"llm:{self.provider.name}" + (":agentic" if self.agentic else "")
 
     # -- public API --------------------------------------------------------- #
     def generate(
@@ -119,10 +145,20 @@ class HypothesisAgent:
         failure: Failure,
         similar: list[RetrievedIncident] | None = None,
         cluster_id: int | None = None,
+        *,
+        events: list[Event] | None = None,
+        store: BaseVectorStore | None = None,
     ) -> Hypothesis:
+        """Hypothesise a root cause.
+
+        ``events`` (the run's parsed events) and ``store`` give the agentic loop
+        something to investigate; the direct and rule-based paths ignore them.
+        """
         similar = similar or []
         if self.provider is not None:
             try:
+                if self.agentic:
+                    return self._agentic_hypothesis(failure, similar, cluster_id, events, store)
                 return self._llm_hypothesis(failure, similar, cluster_id)
             except Exception as exc:  # pragma: no cover - network/SDK dependent
                 logger.warning("LLM hypothesis failed (%s); using rule-based fallback", exc)
@@ -222,6 +258,65 @@ class HypothesisAgent:
             supporting_evidence=failure.evidence,
             similar_incidents=similar,
             source=f"llm:{self.settings.llm_model}",
+        )
+
+    # -- agentic path ------------------------------------------------------- #
+    def _agentic_hypothesis(
+        self,
+        failure: Failure,
+        similar: list[RetrievedIncident],
+        cluster_id: int | None,
+        events: list[Event] | None,
+        store: BaseVectorStore | None,
+    ) -> Hypothesis:
+        assert self.provider is not None and hasattr(self.provider, "run_agent")
+        tools = AgentTools(failure, events, store)
+        candidates = candidates_for(failure.failure_type)
+        ids = _candidate_ids(candidates, similar)
+        lead = (
+            f"Run: {failure.run_id}\n"
+            f"Failure type: {failure.failure_type}  (severity: {failure.severity.value})\n"
+            f"Subsystem(s): {failure.subsys}\n"
+            f"Summary: {failure.summary}\n"
+            f"Error window: {failure.first_ts_ms}-{failure.last_ts_ms} ms "
+            f"(run has {len(events or [])} parsed events available to get_context)\n"
+            f"Seen {failure.occurrences}x in the corpus.\n\n"
+            "First and last error lines:\n" + "\n".join(f"  {e}" for e in failure.evidence[-4:])
+        )
+        if similar:
+            lead += (
+                "\n\nSimilar historical incidents already retrieved for the failure signature:\n"
+            )
+            lead += "\n".join(
+                f"  - run {inc.run_id} | {inc.failure_type} | root_cause={inc.root_cause_id or 'unknown'} "
+                f"| similarity={inc.similarity}"
+                for inc in similar
+            )
+        lead += "\n\nInvestigate, then call submit_hypothesis."
+        payload, raw_trace = self.provider.run_agent(
+            system=_AGENT_SYSTEM_PROMPT,
+            prompt=lead,
+            tools=tools.definitions(),
+            handlers=tools.handlers(),
+            final_tool=_tool_schema(ids),
+            max_turns=self.settings.agent_max_turns,
+        )
+        valid_ids = set(ids)
+        rc_id = payload.get("root_cause_id")
+        rc_id = str(rc_id) if rc_id in valid_ids else None
+        confidence = float(payload.get("confidence", 0.5))
+        return Hypothesis(
+            failure_id=failure.failure_id,
+            cluster_id=cluster_id if cluster_id is not None else failure.cluster_id,
+            root_cause=str(payload["root_cause"]),
+            root_cause_id=rc_id,
+            confidence=min(1.0, max(0.0, confidence)),
+            rationale=str(payload.get("rationale", "")),
+            recommended_actions=[str(a) for a in payload.get("recommended_actions", [])][:5],
+            supporting_evidence=failure.evidence,
+            similar_incidents=similar,
+            source=f"llm:{self.settings.llm_model}:agentic",
+            trace=[ToolCall(**t) for t in raw_trace],
         )
 
     # -- rule-based path ---------------------------------------------------- #

@@ -58,12 +58,19 @@ def process(
     limit: int | None = typer.Option(None, help="Process only the first N runs."),
     no_index: bool = typer.Option(False, "--no-index", help="Do not (re)index the RAG store."),
     no_write: bool = typer.Option(False, "--no-write", help="Do not write report files."),
+    agentic: bool = typer.Option(
+        False,
+        "--agentic",
+        help="Let Claude investigate with tools (needs a key; several calls/failure).",
+    ),
 ) -> None:
     """Run the full analysis pipeline and write debug reports."""
     _init()
     from .pipeline import AnalysisPipeline
 
     settings = get_settings()
+    if agentic:
+        settings = settings.model_copy(update={"llm_mode": "agentic"})
     pipeline = AnalysisPipeline(settings)
     logs_dir = str(logs) if logs else None
 
@@ -122,6 +129,11 @@ def evaluate_cmd(
         help="Score Claude as the hypothesis agent (one paid API call per held-out failure). "
         "Default: the deterministic rule-based agent, even if an API key is configured.",
     ),
+    agentic: bool = typer.Option(
+        False,
+        "--agentic",
+        help="With --llm: tool-using investigation loop (several calls/failure).",
+    ),
 ) -> None:
     """Evaluate pipeline output against ground-truth labels."""
     _init()
@@ -137,6 +149,8 @@ def evaluate_cmd(
         )
     elif llm and not settings.llm_enabled:
         raise typer.BadParameter("--llm needs ANTHROPIC_API_KEY (and SVLA_OFFLINE unset)")
+    if agentic:
+        settings = settings.model_copy(update={"llm_mode": "agentic"})
     pipeline = AnalysisPipeline(settings)
     labels_dir = str(labels) if labels else str(settings.labels_dir)
 

@@ -44,6 +44,13 @@ No failures were detected in this run. ✅
 **Recommended actions:**
 {% for a in h.recommended_actions %}1. {{ a }}
 {% endfor %}
+{% if h.trace %}
+<details><summary>Agent investigation ({{ h.trace | length }} tool calls)</summary>
+
+{% for t in h.trace %}{{ t.step }}. `{{ t.tool }}`{% if t.input %} {{ t.input }}{% endif %}{% if t.note %} — _{{ t.note }}_{% endif %}
+{% endfor %}
+</details>
+{% endif %}
 {% if h.similar_incidents %}
 **Similar historical incidents:**
 {% for inc in h.similar_incidents %}- run `{{ inc.run_id }}` — {{ inc.failure_type }}{% if inc.root_cause_id %} (root cause `{{ inc.root_cause_id }}`){% endif %} — similarity {{ inc.similarity }}

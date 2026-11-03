@@ -37,6 +37,7 @@ class PipelineResult:
     reports: list[RunReport] = field(default_factory=list)
     clusters: list[FailureCluster] = field(default_factory=list)
     failures: list[Failure] = field(default_factory=list)
+    run_files: dict[str, RunFiles] = field(default_factory=dict)  # for lazy re-parsing in eval
 
     @property
     def anomalous_runs(self) -> list[RunReport]:
@@ -81,7 +82,15 @@ class AnalysisPipeline:
                     1 for s in similar if s.distance < 1e-4 and s.signature == failure.signature
                 )
                 failure.occurrences = max(failure.occurrences, 1 + exact)
-                hypotheses.append(self.agent.generate(failure, similar, failure.cluster_id))
+                hypotheses.append(
+                    self.agent.generate(
+                        failure,
+                        similar,
+                        failure.cluster_id,
+                        events=parsed.events,
+                        store=self.store,
+                    )
+                )
 
         present = {
             c.cluster_id: c for c in (clusters_by_fid.get(f.failure_id) for f in failures) if c
@@ -163,7 +172,12 @@ class AnalysisPipeline:
             len(all_failures),
             len(clusters),
         )
-        return PipelineResult(reports=reports, clusters=clusters, failures=all_failures)
+        return PipelineResult(
+            reports=reports,
+            clusters=clusters,
+            failures=all_failures,
+            run_files={rf.run_id: rf for rf in run_files},
+        )
 
     # -- single-run flow ---------------------------------------------------- #
     def process_run(

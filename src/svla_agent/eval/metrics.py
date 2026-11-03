@@ -35,6 +35,7 @@ from ..embeddings.embedder import Embedder
 from ..hypothesize.agent import HypothesisAgent
 from ..labels import lookup_root_cause, root_cause_map
 from ..models import Failure
+from ..parse.parser import parse_run
 from ..pipeline import PipelineResult
 from ..rag.base import BaseVectorStore
 
@@ -294,6 +295,7 @@ def holdout_evaluation(
     pairs: list[tuple[Failure, str | None, str | None, float]] = []
     sources: Counter[str] = Counter()
     reused = 0
+    events_cache: dict[str, list] = {}
     for f in test_failures:
         truth = lookup_root_cause(rc_map, f.failure_id)
         hit = cache.get(f.failure_id)
@@ -303,7 +305,13 @@ def holdout_evaluation(
             pairs.append((f, truth, hit["root_cause_id"], hit["confidence"]))
             continue
         similar = store.query(f.signature, top_k=k, exclude_failure_id=f.failure_id)
-        hyp = agent.generate(f, similar, f.cluster_id)
+        events = None
+        if getattr(agent, "agentic", False) and f.run_id in result.run_files:
+            if f.run_id not in events_cache:
+                events_cache.clear()  # one run at a time keeps memory flat
+                events_cache[f.run_id] = parse_run(result.run_files[f.run_id]).events
+            events = events_cache[f.run_id]
+        hyp = agent.generate(f, similar, f.cluster_id, events=events, store=store)
         sources[hyp.source] += 1
         pairs.append((f, truth, hyp.root_cause_id, hyp.confidence))
         if cache_file:

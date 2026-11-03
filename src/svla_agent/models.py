@@ -147,6 +147,16 @@ class RetrievedIncident(BaseModel):
         return round(1.0 - self.distance, 4)
 
 
+class ToolCall(BaseModel):
+    """One step of the agent's investigation (tool name, arguments, what came back)."""
+
+    step: int
+    tool: str
+    input: dict = Field(default_factory=dict)
+    output: str = Field(default="", description="Tool result as shown to the model (truncated).")
+    note: str = Field(default="", description="Model's own words before the call, if any.")
+
+
 class Hypothesis(BaseModel):
     """A root-cause hypothesis for a failure (cluster), with evidence + provenance."""
 
@@ -162,6 +172,9 @@ class Hypothesis(BaseModel):
     supporting_evidence: list[str] = Field(default_factory=list)
     similar_incidents: list[RetrievedIncident] = Field(default_factory=list)
     source: str = Field(default="llm", description="'llm' or 'rule-based'.")
+    trace: list[ToolCall] = Field(
+        default_factory=list, description="Investigation steps when the agentic loop ran."
+    )
 
 
 class RunReport(BaseModel):
