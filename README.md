@@ -193,9 +193,23 @@ with strict schemas, returns all of a turn's tool results in one message, and
 falls back to the rule-based agent on refusal or failure. Every call is recorded
 on the hypothesis as a trace and shown in the Markdown report, the dashboard's
 "Agent investigation" panel, the REST response and the project site's explorer.
-A typical investigation on the synthetic corpus is 5–6 tool calls and ~27 s:
+A typical investigation on the synthetic corpus is 4–6 tool calls and ~27 s:
 catalogue → the window before the first error across all subsystems → the
 subsystem's telemetry → the dump → answer with the actual numbers quoted.
+
+**Measured** (100-run synthetic hold-out, 12 held-out failures, same split for all three):
+
+| Agent | Root-cause top-1 | Calls per failure | Confidence when right / wrong |
+|---|:---:|:---:|:---:|
+| Rule-based | 11/12 | 0 | 0.88 / 0.59 |
+| Claude, direct | 11/12 | 1 | 0.81 / 0.35 |
+| Claude, agentic | 11/12 | 3.9 | 0.79 / **0.30** |
+
+All three miss the same failure: the one whose tell-tale line is absent by design.
+On this corpus the agentic loop buys explainability and the best calibration, not
+accuracy, at about four times the calls. The 24-run sample shipped under `examples/`
+was analysed in agentic mode: 12 of 12 root causes correct, every hypothesis carrying
+its investigation trace, which the project site's explorer and the dashboard show.
 
 ## 📏 Evaluation
 
