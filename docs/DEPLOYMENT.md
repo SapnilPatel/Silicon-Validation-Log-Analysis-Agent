@@ -51,6 +51,8 @@ Interactive docs: `/docs` (Swagger) and `/redoc`.
 
 ## Streamlit Community Cloud (free, recommended for the public demo)
 
+The public instance lives at **https://svla-agent.streamlit.app/**.
+
 1. Sign in at https://share.streamlit.io with the GitHub account that owns the repo.
 2. **Create app** → *Deploy a public app from GitHub*:
    - Repository: `SapnilPatel/Silicon-Validation-Log-Analysis-Agent`
