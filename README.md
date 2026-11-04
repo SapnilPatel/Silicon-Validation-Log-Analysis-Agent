@@ -41,7 +41,7 @@ API and an interactive dashboard.
 - **Privacy first** — e-mails, IPs, MACs, serials and credentials are redacted *before* indexing, prompting or reporting.
 - **Pluggable** — vector store (`chroma` / `memory`) and LLM provider behind small interfaces; Claude + Chroma ship.
 - **Three front doors** — `svla` CLI, FastAPI REST service, Streamlit dashboard. Docker image built in CI.
-- **Offline, deterministic tests** — 46 tests incl. the REST API and headless dashboard; CI on Python 3.10–3.12.
+- **Offline, deterministic tests** — 61 tests incl. the REST API, the headless dashboard and scripted agent/team runs; CI on Python 3.10–3.12.
 
 ## 📚 Contents
 
@@ -383,14 +383,14 @@ make check           # ruff + format check + mypy + pytest (offline)
 make test            # pytest only
 ```
 
-The test suite (46 tests) runs fully offline and deterministically against a
+The test suite (61 tests) runs fully offline and deterministically against a
 small generated dataset, including the REST API and headless dashboard tests.
 CI (GitHub Actions) lints, type-checks and tests on Python 3.10–3.12, smokes the
 bundled sample dataset end to end and builds the Docker image. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **Tech stack:** Python 3.10+ · pydantic / pydantic-settings · Drain3 · sentence-transformers ·
-scikit-learn (HDBSCAN) · ChromaDB · Anthropic Claude · Jinja2 · Typer · Rich ·
+scikit-learn (HDBSCAN) · ChromaDB · Anthropic Claude · LangGraph · Jinja2 · Typer · Rich ·
 FastAPI · Streamlit / Plotly · pytest / ruff / mypy · Docker · Streamlit Community Cloud.
 
 ## 📖 Docs
