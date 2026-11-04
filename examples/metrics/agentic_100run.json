@@ -110,7 +110,7 @@
     "hypothesis_sources": {
       "llm:claude-opus-5-5:agentic": 12
     },
-    "hypotheses_reused_from_cache": 0
+    "hypotheses_reused_from_cache": 12
   },
   "retrieval": {
     "k": 5,

@@ -26,6 +26,10 @@ This page tracks each promise against what the repository actually ships.
 
 ## Known limitations
 
+- The generator's thermal profile is not physically realistic: temperature jumps
+  from the ~95 °C plateau straight to the trip reading within milliseconds. The
+  multi-agent reviewer flagged exactly this on a sample run and abstained. A
+  ramped telemetry profile is the obvious next generator improvement.
 - The dataset is synthetic. Numbers in the README measure the pipeline against
   the generator's ground truth, not against real silicon logs. Every root cause
   leaves a tell-tale line 90% of the time; the remaining 10% exercises the

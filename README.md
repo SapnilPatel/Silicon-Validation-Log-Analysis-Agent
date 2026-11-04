@@ -236,19 +236,25 @@ A typical investigation on the synthetic corpus is 4–6 tool calls and ~27 s:
 catalogue → the window before the first error across all subsystems → the
 subsystem's telemetry → the dump → answer with the actual numbers quoted.
 
-**Measured** (100-run synthetic hold-out, 12 held-out failures, same split for all three):
+**Measured** (100-run synthetic hold-out, 12 held-out failures, same split for all four):
 
 | Agent | Root-cause top-1 | Calls per failure | Confidence when right / wrong |
 |---|:---:|:---:|:---:|
 | Rule-based | 11/12 | 0 | 0.88 / 0.59 |
-| Claude, direct | 11/12 | 1 | 0.81 / 0.35 |
-| Claude, agentic | 11/12 | 3.9 | 0.79 / **0.30** |
+| Claude, direct | 11/12 | 1 | 0.81 / 0.30 |
+| Claude, agentic (one agent, tools) | 11/12 | 3.9 | 0.79 / 0.30 |
+| Claude, multi-agent (LangGraph team) | 11/12 | 18 | 0.73 / 0.40 |
 
-All three miss the same failure: the one whose tell-tale line is absent by design.
-On this corpus the agentic loop buys explainability and the best calibration, not
-accuracy, at about four times the calls. The 24-run sample shipped under `examples/`
-was analysed in agentic mode: 12 of 12 root causes correct, every hypothesis carrying
-its investigation trace, which the project site's explorer and the dashboard show.
+All four miss the same failure: the one whose tell-tale line is absent by design, so
+on this corpus more agents do not buy more accuracy; they buy explainability and
+calibration at a steep call budget. The team is the most expensive and the most
+*skeptical*: on the 24-run sample under `examples/` (analysed in multi-agent mode, every
+hypothesis carrying the full team conversation) it names 10 of 12 root causes and
+abstains on 2. One abstention is worth reading on the site: the reviewer rejected the
+"workload burst" thermal trip because the die temperature jumped 24 °C in 4 ms, which
+is physically implausible and is in fact an artefact of the synthetic generator that
+no single-agent mode noticed. The other is a NoC register dump the specialist could
+not decode without a field map, so it declined to guess.
 
 ## 📏 Evaluation
 
@@ -284,6 +290,10 @@ failure, roughly 15 s and about a cent each on `claude-opus-5-5`.
 Throughput on a laptop (Apple Silicon, single process): the 100-run corpus is
 97 MB / 1.45 M log events across 700 files, parsed, template-mined and
 classified in 23 s, about 64 k events/s, streaming so memory stays flat.
+
+Scoring note: a run can carry two injected patterns of the same failure type with
+different root causes while the pipeline reports one failure per type; any of them
+counts as correct (1 of 44 failures in the 100-run corpus, 3 of 166 in the 400-run).
 
 What these numbers mean, honestly: the corpus is synthetic. Every injected
 failure leaves a root-cause tell-tale in the logs **90% of the time**; the rest
