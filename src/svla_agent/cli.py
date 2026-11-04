@@ -63,13 +63,20 @@ def process(
         "--agentic",
         help="Let Claude investigate with tools (needs a key; several calls/failure).",
     ),
+    multi_agent: bool = typer.Option(
+        False,
+        "--multi-agent",
+        help="LangGraph team: triage -> subsystem specialists -> reviewer (several calls/failure).",
+    ),
 ) -> None:
     """Run the full analysis pipeline and write debug reports."""
     _init()
     from .pipeline import AnalysisPipeline
 
     settings = get_settings()
-    if agentic:
+    if multi_agent:
+        settings = settings.model_copy(update={"llm_mode": "multiagent"})
+    elif agentic:
         settings = settings.model_copy(update={"llm_mode": "agentic"})
     pipeline = AnalysisPipeline(settings)
     logs_dir = str(logs) if logs else None
@@ -134,6 +141,11 @@ def evaluate_cmd(
         "--agentic",
         help="With --llm: tool-using investigation loop (several calls/failure).",
     ),
+    multi_agent: bool = typer.Option(
+        False,
+        "--multi-agent",
+        help="LangGraph team: triage -> subsystem specialists -> reviewer (several calls/failure).",
+    ),
 ) -> None:
     """Evaluate pipeline output against ground-truth labels."""
     _init()
@@ -149,7 +161,9 @@ def evaluate_cmd(
         )
     elif llm and not settings.llm_enabled:
         raise typer.BadParameter("--llm needs ANTHROPIC_API_KEY (and SVLA_OFFLINE unset)")
-    if agentic:
+    if multi_agent:
+        settings = settings.model_copy(update={"llm_mode": "multiagent"})
+    elif agentic:
         settings = settings.model_copy(update={"llm_mode": "agentic"})
     pipeline = AnalysisPipeline(settings)
     labels_dir = str(labels) if labels else str(settings.labels_dir)

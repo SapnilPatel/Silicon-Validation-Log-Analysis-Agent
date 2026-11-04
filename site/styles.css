@@ -160,6 +160,7 @@ table.clusters th { color: var(--text-3); font-size: .75rem; text-transform: upp
 ol.trace { margin: 0; padding-left: 20px; display: grid; gap: 10px; }
 ol.trace li::marker { color: var(--text-3); font-family: var(--mono); font-size: .8rem; }
 ol.trace .note { margin: 0 0 4px; color: var(--text-2); font-size: .88rem; font-style: italic; }
+ol.trace .agent { display: inline-block; font-family: var(--mono); font-size: .72rem; color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 6px; padding: 1px 7px; margin-right: 6px; }
 ol.trace code.call { display: inline-block; margin-bottom: 6px; color: var(--accent-2); background: var(--surface); font-size: .8rem; }
 pre.evidence.small { font-size: .72rem; max-height: 180px; overflow: auto; }
 

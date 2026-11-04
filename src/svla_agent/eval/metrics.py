@@ -306,7 +306,7 @@ def holdout_evaluation(
             continue
         similar = store.query(f.signature, top_k=k, exclude_failure_id=f.failure_id)
         events = None
-        if getattr(agent, "agentic", False) and f.run_id in result.run_files:
+        if getattr(agent, "needs_events", False) and f.run_id in result.run_files:
             if f.run_id not in events_cache:
                 events_cache.clear()  # one run at a time keeps memory flat
                 events_cache[f.run_id] = parse_run(result.run_files[f.run_id]).events

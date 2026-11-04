@@ -26,6 +26,7 @@ from ..models import Event, Failure, Hypothesis, RetrievedIncident, ToolCall
 from ..rag.base import BaseVectorStore
 from .knowledge import RootCause, candidates_for, prior_for, root_cause_by_id
 from .llm import LLMProvider, make_provider
+from .multiagent import run_team
 from .tools import AgentTools
 
 logger = get_logger(__name__)
@@ -134,10 +135,24 @@ class HypothesisAgent:
         )
 
     @property
+    def multiagent(self) -> bool:
+        """True when the LangGraph team (triage -> specialists -> reviewer) is configured."""
+        return (
+            self.provider is not None
+            and (self.settings.llm_mode or "direct").lower() in {"multiagent", "multi-agent"}
+            and hasattr(self.provider, "run_agent")
+        )
+
+    @property
+    def needs_events(self) -> bool:
+        return self.agentic or self.multiagent
+
+    @property
     def backend(self) -> str:
         if not self.provider:
             return "rule-based"
-        return f"llm:{self.provider.name}" + (":agentic" if self.agentic else "")
+        suffix = ":multiagent" if self.multiagent else (":agentic" if self.agentic else "")
+        return f"llm:{self.provider.name}{suffix}"
 
     # -- public API --------------------------------------------------------- #
     def generate(
@@ -157,6 +172,8 @@ class HypothesisAgent:
         similar = similar or []
         if self.provider is not None:
             try:
+                if self.multiagent:
+                    return self._multiagent_hypothesis(failure, similar, cluster_id, events, store)
                 if self.agentic:
                     return self._agentic_hypothesis(failure, similar, cluster_id, events, store)
                 return self._llm_hypothesis(failure, similar, cluster_id)
@@ -316,6 +333,44 @@ class HypothesisAgent:
             supporting_evidence=failure.evidence,
             similar_incidents=similar,
             source=f"llm:{self.settings.llm_model}:agentic",
+            trace=[ToolCall(**t) for t in raw_trace],
+        )
+
+    # -- multi-agent path --------------------------------------------------- #
+    def _multiagent_hypothesis(
+        self,
+        failure: Failure,
+        similar: list[RetrievedIncident],
+        cluster_id: int | None,
+        events: list[Event] | None,
+        store: BaseVectorStore | None,
+    ) -> Hypothesis:
+        assert self.provider is not None
+        ids = _candidate_ids(candidates_for(failure.failure_type), similar)
+        payload, raw_trace, findings = run_team(
+            self.provider, self.settings, failure, similar, events, store, ids
+        )
+        valid_ids = set(ids)
+        rc_id = payload.get("root_cause_id")
+        rc_id = str(rc_id) if rc_id in valid_ids else None
+        confidence = float(payload.get("confidence", 0.5))
+        rationale = str(payload.get("rationale", ""))
+        chain = str(payload.get("causal_chain", "")).strip()
+        if chain:
+            rationale = f"Causal chain: {chain}. {rationale}"
+        agreeing = sum(1 for f in findings if rc_id and f.get("root_cause_id") == rc_id)
+        rationale += f" ({agreeing} of {len(findings)} specialists pointed at this cause.)"
+        return Hypothesis(
+            failure_id=failure.failure_id,
+            cluster_id=cluster_id if cluster_id is not None else failure.cluster_id,
+            root_cause=str(payload["root_cause"]),
+            root_cause_id=rc_id,
+            confidence=min(1.0, max(0.0, confidence)),
+            rationale=rationale,
+            recommended_actions=[str(a) for a in payload.get("recommended_actions", [])][:5],
+            supporting_evidence=failure.evidence,
+            similar_incidents=similar,
+            source=f"llm:{self.settings.llm_model}:multiagent",
             trace=[ToolCall(**t) for t in raw_trace],
         )
 

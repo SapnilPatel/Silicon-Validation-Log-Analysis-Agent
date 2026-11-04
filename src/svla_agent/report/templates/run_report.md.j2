@@ -47,7 +47,7 @@ No failures were detected in this run. ✅
 {% if h.trace %}
 <details><summary>Agent investigation ({{ h.trace | length }} tool calls)</summary>
 
-{% for t in h.trace %}{{ t.step }}. `{{ t.tool }}`{% if t.input %} {{ t.input }}{% endif %}{% if t.note %} — _{{ t.note }}_{% endif %}
+{% for t in h.trace %}{{ t.step }}. {% if t.agent %}**{{ t.agent }}** → {% endif %}`{{ t.tool }}`{% if t.input %} {{ t.input }}{% endif %}{% if t.note %} — _{{ t.note }}_{% endif %}
 {% endfor %}
 </details>
 {% endif %}

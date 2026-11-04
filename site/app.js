@@ -189,8 +189,9 @@
           <div class="conf"><div class="bar"><i style="width:${Math.round(h.confidence * 100)}%"></i></div><span>${pct(h.confidence)} · <span class="src">${esc(h.source)}</span></span></div>
           <p class="why">${esc(h.rationale)}</p><ol>${h.recommended_actions.map((a) => `<li>${esc(a)}</li>`).join("")}</ol>`;
         if (h.trace?.length) {
-          html += `<h4 style="margin-top:12px">Agent investigation · ${h.trace.length} tool calls <span class="muted">(what Claude looked at before answering)</span></h4><ol class="trace">` +
-            h.trace.map((t) => `<li>${t.note ? `<p class="note">${esc(t.note)}</p>` : ""}<code class="call">${esc(t.tool)}(${esc(Object.entries(t.input || {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", "))})</code><pre class="evidence small">${esc((t.output || "").slice(0, 700))}${(t.output || "").length > 700 ? "\n…" : ""}</pre></li>`).join("") + `</ol>`;
+          const agents = new Set(h.trace.map((t) => t.agent).filter(Boolean));
+          html += `<h4 style="margin-top:12px">${agents.size ? `Team investigation · ${agents.size} agents · ${h.trace.length} steps` : `Agent investigation · ${h.trace.length} tool calls`} <span class="muted">(${agents.size ? "triage → specialists → reviewer" : "what Claude looked at before answering"})</span></h4><ol class="trace">` +
+            h.trace.map((t) => `<li>${t.note ? `<p class="note">${esc(t.note)}</p>` : ""}${t.agent ? `<span class="agent">${esc(t.agent)}</span> ` : ""}<code class="call">${esc(t.tool)}(${esc(Object.entries(t.input || {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", "))})</code><pre class="evidence small">${esc((t.output || "").slice(0, 700))}${(t.output || "").length > 700 ? "\n…" : ""}</pre></li>`).join("") + `</ol>`;
         }
         if (h.similar_incidents?.length) html += `<h4 style="margin-top:12px">Similar historical incidents (RAG)</h4><table class="sim"><thead><tr><th>run</th><th>type</th><th>root cause</th><th>similarity</th></tr></thead><tbody>${h.similar_incidents.map((s) => `<tr><td class="mono">${esc(s.run_id)}</td><td>${esc(s.failure_type)}</td><td class="mono">${esc(s.root_cause_id || "—")}</td><td>${fmt(1 - s.distance, 3)}</td></tr>`).join("")}</tbody></table>`;
         html += `</div>`;

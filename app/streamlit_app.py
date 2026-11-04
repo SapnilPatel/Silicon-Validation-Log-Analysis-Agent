@@ -369,13 +369,18 @@ def render_failure(f: dict, hyp: dict | None, key: str = "detail") -> None:
             for a in hyp["recommended_actions"]:
                 st.markdown(f"- {a}")
         if hyp.get("trace"):
-            with st.expander(
-                f"Agent investigation · {len(hyp['trace'])} tool calls", expanded=False
-            ):
+            agents = {t["agent"] for t in hyp["trace"] if t.get("agent")}
+            label = (
+                f"Team investigation · {len(agents)} agents · {len(hyp['trace'])} steps"
+                if agents
+                else f"Agent investigation · {len(hyp['trace'])} tool calls"
+            )
+            with st.expander(label, expanded=False):
                 for t in hyp["trace"]:
                     if t.get("note"):
                         st.markdown(f"_{t['note']}_")
-                    st.markdown(f"**{t['step']}. `{t['tool']}`** `{t.get('input') or {}}`")
+                    who = f"{t['agent']} → " if t.get("agent") else ""
+                    st.markdown(f"**{t['step']}. {who}`{t['tool']}`** `{t.get('input') or {}}`")
                     st.code((t.get("output") or "")[:1200], language="text")
         if hyp["similar_incidents"]:
             st.markdown("**Similar historical incidents (RAG)**")

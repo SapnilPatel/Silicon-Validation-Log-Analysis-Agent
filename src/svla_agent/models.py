@@ -152,6 +152,7 @@ class ToolCall(BaseModel):
 
     step: int
     tool: str
+    agent: str = Field(default="", description="Which agent acted (multi-agent mode).")
     input: dict = Field(default_factory=dict)
     output: str = Field(default="", description="Tool result as shown to the model (truncated).")
     note: str = Field(default="", description="Model's own words before the call, if any.")
