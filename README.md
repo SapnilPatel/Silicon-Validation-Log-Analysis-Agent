@@ -274,7 +274,7 @@ deterministic rule-based agent with transformer or hashing embeddings:
 | Cluster purity vs. failure type | 1.00 | 1.00 | 1.00 |
 | Cluster homogeneity vs. root cause | 0.91 | 0.91 | 0.91 |
 | Retrieval recall@5 (same type) / MRR | 1.00 / 1.00 | 1.00 / 1.00 | 1.00 / 1.00 |
-| Retrieval recall@5 (same root cause) | 0.98 | 0.98 | 0.92 |
+| Retrieval recall@5 (same root cause) | 0.98 | 0.98 | 0.94 |
 | **Root-cause top-1 accuracy** | **0.94** (49/52) | **0.96** (50/52) | **0.92** (48/52) |
 | Mean confidence when right / **wrong** | 0.82 / **0.47** | 0.92 / 0.77 | 0.92 / 0.77 |
 

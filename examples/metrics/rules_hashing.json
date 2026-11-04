@@ -75,7 +75,7 @@
       "recall_at_k": 1.0,
       "mrr": 1.0,
       "considered": 52,
-      "root_cause_recall_at_k": 0.9231,
+      "root_cause_recall_at_k": 0.9423,
       "root_cause_considered": 52
     },
     "root_cause": {
@@ -83,7 +83,7 @@
       "n": 52,
       "predicted_rate": 1.0,
       "mean_confidence_correct": 0.923,
-      "mean_confidence_wrong": 0.765,
+      "mean_confidence_wrong": 0.7475,
       "per_type": {
         "DDR_ECC": {
           "correct": 6,
@@ -119,14 +119,15 @@
     },
     "hypothesis_sources": {
       "rule-based": 52
-    }
+    },
+    "hypotheses_reused_from_cache": 0
   },
   "retrieval": {
     "k": 5,
     "recall_at_k": 1.0,
     "mrr": 1.0,
     "considered": 52,
-    "root_cause_recall_at_k": 0.9231,
+    "root_cause_recall_at_k": 0.9423,
     "root_cause_considered": 52
   },
   "root_cause": {
@@ -134,7 +135,7 @@
     "n": 52,
     "predicted_rate": 1.0,
     "mean_confidence_correct": 0.923,
-    "mean_confidence_wrong": 0.765,
+    "mean_confidence_wrong": 0.7475,
     "per_type": {
       "DDR_ECC": {
         "correct": 6,

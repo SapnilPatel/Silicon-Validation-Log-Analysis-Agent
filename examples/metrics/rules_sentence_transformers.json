@@ -82,7 +82,7 @@
       "accuracy": 0.9615,
       "n": 52,
       "predicted_rate": 1.0,
-      "mean_confidence_correct": 0.9159,
+      "mean_confidence_correct": 0.9154,
       "mean_confidence_wrong": 0.765,
       "per_type": {
         "DDR_ECC": {
@@ -119,7 +119,8 @@
     },
     "hypothesis_sources": {
       "rule-based": 52
-    }
+    },
+    "hypotheses_reused_from_cache": 0
   },
   "retrieval": {
     "k": 5,
@@ -133,7 +134,7 @@
     "accuracy": 0.9615,
     "n": 52,
     "predicted_rate": 1.0,
-    "mean_confidence_correct": 0.9159,
+    "mean_confidence_correct": 0.9154,
     "mean_confidence_wrong": 0.765,
     "per_type": {
       "DDR_ECC": {
