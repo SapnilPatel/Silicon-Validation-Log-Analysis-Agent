@@ -386,10 +386,9 @@ class InvestigationTeam:
                 last_exc = exc
                 logger.warning("%s specialist attempt %d failed: %s", subsys, attempt + 1, exc)
         if result is None:  # one failed specialist must not sink the team
-            exc = last_exc
             result, raw_trace = (
                 {
-                    "observation": f"specialist failed: {exc}",
+                    "observation": f"specialist failed: {last_exc}",
                     "suspected_cause": "",
                     "root_cause_id": "NONE",
                     "confidence": 0.0,
