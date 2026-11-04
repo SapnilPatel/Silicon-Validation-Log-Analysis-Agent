@@ -69,15 +69,16 @@
     {
       "failure_id": "000021:NOC_TIMEOUT",
       "cluster_id": 2,
-      "root_cause": "A dependency cycle on NoC ring R1 (around the PCIE<->DDR routes) deadlocked the fabric, so the DMA->PCIE transaction 0xE470 timed out and the interconnect failed.",
+      "root_cause": "A routing-dependency deadlock on NOC0 (ring R1, 2 members) that probably involves the PCIE<->DDR path. One transaction, DMA->PCIE txn 0xE470, waits on a circular dependency, never completes and hits the transaction timeout.",
       "root_cause_id": "RC_NOC_DEADLOCK",
-      "confidence": 0.62,
-      "rationale": "The first warning in the run is 'NOC: WARN: Dependency cycle suspected | ring=R1 members=2' at 3921 ms. This is the catalogue's tell-tale for RC_NOC_DEADLOCK. It is followed by repeated congestion warnings (txn_q=high, stall_pct 26-33%) on PCIE<->DDR and CPU<->DDR up to 4388 ms. The DMA->PCIE timeout comes at 4738 ms and the fatal error at 4799 ms. Nothing in the logs points to QoS starvation (no credits=0 or credit-starvation lines) or DMA burst overflow (no burst_len lines), even though the two most similar past incidents had those causes. Points against: fabric stall had dropped to 1-13% in the last 250 ms before the timeout, which doesn't fit a fabric-wide deadlock unless the stuck flows stayed confined to ring R1. PCIe retrain count also climbed steadily (41->44 in about 150 ms) on the destination link. A flaky PCIe link could be causing or adding to the timeout, so confidence is moderate. The register dump is raw hex and I couldn't decode it.",
+      "confidence": 0.55,
+      "rationale": "Causal chain: Dependency cycle forms on ring R1 (3921 ms) -> repeated high txn_q congestion on PCIE<->DDR (stall 28–33%, 3929–4308 ms) as routes on the cycle back up -> the cycle locks up; transactions stuck on it stop moving, so overall fabric telemetry drops to low (stall 1–3%) -> DMA->PCIE txn 0xE470 never completes -> NOC transaction timeout rc=-62 (4738 ms) -> NOC0 error register snapshot -> SYSTEM FATAL interconnect failure (4799 ms). The findings agree on what they rule out, and only one subsystem offers a positive signal.\n- PMU: VCORE stable, droop_cnt=0 even at 4771 ms, no gating or DVFS events.\n- FW: kept running through the timeout, no exceptions or catalogue markers.\n- PCIE: link stayed x4 Gen4 with aer=0, no completion-timeout or credit messages. The retrain rate has been steady since boot, so it isn't the trigger.\n- Historian's top matches: QoS starvation (run 000003) and DMA burst overflow (run 000010) both lack their tell-tale lines ('credits=0' / 'burst_len'), so the high similarity scores are probably just because the failure type matches.\n- The only catalogue marker present is 'Dependency cycle suspected', 817 ms before the timeout. It is followed by congestion on PCIE<->DDR, the same region the failing DMA->PCIE transaction routes through.\n- A quiet fabric at the moment of the timeout argues against starvation, which would show sustained high stall. It fits a localized deadlock, where stuck transactions stop generating traffic.\n\nWhy confidence is only moderate:\n- There is a single cycle warning, and it says 'suspected'.\n- Ring R1's members aren't identified.\n- The NOC0 register dump hasn't been decoded.\n- We have no DMA-side log, so we can't confirm that 0xE470 was on the cycle or fully rule out a DMA-side cause.\n- A PCIE retrain at 4738 ms can't be ruled out, because PCIE logging stops at 4662 ms. (1 of 4 specialists pointed at this cause.)",
       "recommended_actions": [
-        "Decode the NOC0 register snapshot and check the R1 ring route table for a cyclic channel dependency between the 2 members (PCIE<->DDR paths)",
-        "Enable deadlock-recovery / escape-VC timeouts on ring R1 and rerun the same traffic to see if the timeout goes away",
-        "Rule out the PCIe link: pin the link at a lower gen or turn off ASPM, track LTSSM retrain events, and check whether the retrain count rising lines up with the DMA->PCIE stalls",
-        "Rerun with DMA->PCIE traffic isolated from CPU/DDR traffic to confirm the failure needs the cross-route dependency"
+        "Decode the NOC0 register snapshot (20 words, 0x60000E59–0x60000EA5) against the fabric register map: per-port outstanding counts, credit counters, arbiter state, and which ports/VCs are blocked, to confirm a circular wait involving the DMA->PCIE route.",
+        "Identify the two members of ring R1 from the route tables or the fabric configuration, and check whether the DMA->PCIE and PCIE<->DDR paths share virtual channels or buffers that could create a cyclic dependency.",
+        "Rerun with NoC deadlock-detection or trace enabled (transaction trace on NOC0 from 3900 ms) and with DMA logging enabled (descriptors and burst_len for 0xE470), to rule out a DMA burst overflow that the logs can't see.",
+        "Reproduce with separate VC/escape-channel assignment for DMA->PCIE vs PCIE->DDR traffic, or with the cycle-forming route disabled; if timeouts disappear, deadlock is confirmed.",
+        "Increase PCIE logging granularity around the failure window, and correlate retrain timestamps with the timeout, to rule out a PCIE retrain at 4738 ms stalling the target; separately investigate the steady ~10/s retrain rate as a link-quality issue."
       ],
       "supporting_evidence": [
         "[00:00:03.921] NOC: WARN: Dependency cycle suspected | ring=R1 members=2",
@@ -129,30 +130,20 @@
           "distance": 0.6342806816101074
         }
       ],
-      "source": "llm:claude-opus-5-5:agentic",
+      "source": "llm:claude-opus-5-5:multiagent",
       "trace": [
         {
           "step": 1,
-          "tool": "lookup_catalogue",
+          "tool": "plan_investigation",
+          "agent": "triage",
           "input": {},
-          "output": "Prior for NOC_TIMEOUT: Interconnect transaction timed out under fabric congestion\nSustained high transaction-queue occupancy and stalls precede a transaction timeout and interconnect failure, suggesting QoS starvation or a potential deadlock on a congested route.\n\n- RC_NOC_QOS_STARVATION: A low-priority initiator is starved of QoS credits\n    tell-tales: qos credit starvation, credits=0\n    actions: Rebalance QoS weights / credits for the starved initiator; Enable age-based arbitration on the congested link\n- RC_NOC_DEADLOCK: Dependency cycle across fabric routes causes a deadlock\n    tell-tales: dependency cycle suspected, cycle\n    actions: Inspect the route table for cyclic dependencies; Enable deadlock-recovery timeouts on the affected ring\n- RC_DMA_BURST_OVERFLOW: DMA burst length overflows the fabric buffers\n    tell-tales: dma burst overflow, burst_len\n    actions: Reduce the DMA burst length or add outstanding-transaction limits; Verify buffer depth on the DMA->DDR path",
-          "note": ""
+          "output": "NOC: For txn_id=0xE470 (DMA->PCIE) that timed out at 4738 ms with rc=-62, decode the NOC0 error register snapshot. Which port or arbiter stalled? Do QoS and arbitration counters show the DMA or PCIE path being starved (like RC_NOC_QOS_STARVATION in run 000003), or do they show DMA burst/credit overflow (like RC_DMA_BURST_OVERFLOW in run 000010)? Report outstanding-transaction and credit counts leading up to 4738 ms.; PCIE: Was the PCIE target able to accept the DMA write/read at 4738 ms? Check link state (LTSSM, L0s/L1 entries, link-down or retrain events), completion timeouts, and backpressure or credit exhaustion in the window just before 4738 ms. Could a stalled PCIE endpoint have caused the NoC transaction timeout?; PMU: Were there any power-state changes, clock gating, DVFS transitions, or voltage droops affecting the NOC0 fabric, the DMA engine, or the PCIE domain between about 4600 and 4799 ms? Did any domain get gated or reclocked while txn 0xE470 was in flight?; FW: How did firmware set up the DMA transfer that produced txn_id=0xE470 (burst size, descriptor count, target address in PCIE space)? Did firmware change NoC QoS or priority settings, or log any exceptions or watchdog events, just before 4738 ms?",
+          "note": "The failure is a NoC timeout on a DMA-to-PCIE transaction. The two closest past incidents point to NoC QoS starvation and DMA burst overflow, so the NOC specialist should decode the register dump to tell these apart. PCIE is the destination, and an unresponsive endpoint is a likely upstream cause. PMU covers power or clock transitions that could stall the fabric. FW covers how the DMA and QoS were configured. BOOT, DDR, and THERMAL are lower priority: the path doesn't involve DDR, and there's no thermal signal in the error lines."
         },
         {
           "step": 2,
-          "tool": "get_context",
-          "input": {
-            "start_ms": 4500,
-            "end_ms": 4799,
-            "include_info": true,
-            "subsystem": ""
-          },
-          "output": "[00:00:04.506] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=41 aer=0\n[00:00:04.515] THERMAL: INFO: Temp sample | t_c=76 sensor=0\n[00:00:04.520] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.526] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.541] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=13\n[00:00:04.554] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=4\n[00:00:04.568] THERMAL: INFO: Temp sample | t_c=77 sensor=2\n[00:00:04.573] THERMAL: INFO: Temp sample | t_c=75 sensor=3\n[00:00:04.576] FW: INFO: Heartbeat | i=518\n[00:00:04.591] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.604] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=43 aer=0\n[00:00:04.609] THERMAL: INFO: Temp sample | t_c=77 sensor=2\n[00:00:04.623] THERMAL: INFO: Temp sample | t_c=74 sensor=2\n[00:00:04.636] PMU: INFO: Rail telemetry | rail=VCORE mv=884 i_ma=680 droop_cnt=0\n[00:00:04.637] DDR: INFO: DDR counters | ecc_corr=87 ecc_ue=0 rd_lat_ns=83\n[00:00:04.643] PMU: INFO: Rail telemetry | rail=VCORE mv=924 i_ma=589 droop_cnt=0\n[00:00:04.647] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=9\n[00:00:04.658] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=43 aer=0\n[00:00:04.660] PMU: INFO: Rail telemetry | rail=VCORE mv=881 i_ma=382 droop_cnt=0\n[00:00:04.662] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=44 aer=0\n[00:00:04.667] THERMAL: INFO: Temp sample | t_c=75 sensor=3\n[00:00:04.680] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00",
-          "note": ""
-        },
-        {
-          "step": 3,
           "tool": "read_block",
+          "agent": "specialist:NOC",
           "input": {
             "ts_ms": 4780
           },
@@ -160,31 +151,251 @@
           "note": ""
         },
         {
-          "step": 4,
+          "step": 3,
           "tool": "get_context",
+          "agent": "specialist:NOC",
           "input": {
-            "start_ms": 0,
-            "end_ms": 4500,
-            "include_info": false,
-            "subsystem": ""
+            "start_ms": 3500,
+            "end_ms": 4800,
+            "include_info": true,
+            "subsystem": "NOC"
           },
-          "output": "[00:00:03.921] NOC: WARN: Dependency cycle suspected | ring=R1 members=2\n[00:00:03.929] NOC: WARN: Fabric congestion | txn_q=high stall_pct=33 region=PCIE<->DDR\n[00:00:04.055] NOC: WARN: Fabric congestion | txn_q=high stall_pct=30 region=CPU<->DDR\n[00:00:04.159] NOC: WARN: Fabric congestion | txn_q=high stall_pct=28 region=PCIE<->DDR\n[00:00:04.308] NOC: WARN: Fabric congestion | txn_q=high stall_pct=31 region=PCIE<->DDR\n[00:00:04.388] NOC: WARN: Fabric congestion | txn_q=high stall_pct=26 region=CPU<->DDR",
+          "output": "[00:00:03.560] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=9\n[00:00:03.597] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=2\n[00:00:03.756] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=6\n[00:00:03.868] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=4\n[00:00:03.921] NOC: WARN: Dependency cycle suspected | ring=R1 members=2\n[00:00:03.929] NOC: WARN: Fabric congestion | txn_q=high stall_pct=33 region=PCIE<->DDR\n[00:00:03.967] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=12\n[00:00:04.055] NOC: WARN: Fabric congestion | txn_q=high stall_pct=30 region=CPU<->DDR\n[00:00:04.097] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=11\n[00:00:04.120] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=5\n[00:00:04.122] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00:00:04.159] NOC: WARN: Fabric congestion | txn_q=high stall_pct=28 region=PCIE<->DDR\n[00:00:04.162] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=2\n[00:00:04.210] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=5\n[00:00:04.236] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=10\n[00:00:04.308] NOC: WARN: Fabric congestion | txn_q=high stall_pct=31 region=PCIE<->DDR\n[00:00:04.337] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=6\n[00:00:04.388] NOC: WARN: Fabric congestion | txn_q=high stall_pct=26 region=CPU<->DDR\n[00:00:04.444] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=1\n[00:00:04.541] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=13\n[00:00:04.554] NOC: INFO: Fabric telemetry | tx",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:NOC",
+          "input": {},
+          "output": "Root causes the NOC specialist can recognise:\n- RC_NOC_QOS_STARVATION: A low-priority initiator is starved of QoS credits  (tell-tales: qos credit starvation, credits=0)\n- RC_NOC_DEADLOCK: Dependency cycle across fabric routes causes a deadlock  (tell-tales: dependency cycle suspected, cycle)\n- RC_DMA_BURST_OVERFLOW: DMA burst length overflows the fabric buffers  (tell-tales: dma burst overflow, burst_len)",
           "note": ""
         },
         {
           "step": 5,
           "tool": "get_context",
+          "agent": "specialist:NOC",
           "input": {
             "start_ms": 0,
-            "end_ms": 400,
+            "end_ms": 3500,
+            "include_info": false,
+            "subsystem": "NOC"
+          },
+          "output": "No matching lines between 0 and 3500 ms.",
+          "note": ""
+        },
+        {
+          "step": 6,
+          "tool": "search_incidents",
+          "agent": "specialist:NOC",
+          "input": {
+            "query": "NOC: WARN: Dependency cycle suspected | ring=R1 members=2",
+            "top_k": 5
+          },
+          "output": "- run 000010 | NOC_TIMEOUT | root_cause=RC_DMA_BURST_OVERFLOW | similarity=0.4794\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow\n- run 000003 | NOC_TIMEOUT | root_cause=RC_NOC_QOS_STARVATION | similarity=0.4651\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: QoS credit starvation\n- run 000000 | DDR_ECC | root_cause=RC_DDR_CDC_GLITCH | similarity=0.2716\n    DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: CDC synchronizer glitch ; DDR: Read retry invoked\n- run 000016 | DDR_ECC | root_cause=RC_DDR_TIMING_VIOLATION | similarity=0.2687\n    DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: Timing parameter violation ; DDR: Read retry invoke\n- run 000020 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.2567\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power ",
+          "note": ""
+        },
+        {
+          "step": 7,
+          "tool": "report_finding",
+          "agent": "specialist:NOC",
+          "input": {},
+          "output": "RC_NOC_DEADLOCK (0.60): The NOC0 register snapshot at 4780 ms is 20 raw words (0x60000E59–0x60000EA5) with no field labels. I can't decode a specific port, arbiter, outstanding-transaction count or credit count from it. I didn't make up a decode. No NOC lines at all appear between 0 and 3500 ms. The first warning is \"Dependency cycle suspected | ring=R1 members=2\" at 3921 ms, 817 ms before the timeout. After it, congestion warnings show high transaction queues: PCIE<->DDR stall_pct=33 at 3929, 28 at 4159 and 31 at 4308; CPU<->DDR stall_pct=30 at 4055 and 26 at 4388. Between these, telemetry swings between low and med",
+          "note": "A dependency cycle across fabric routes (ring R1, 2 members) is the only catalogue tell-tale present. It fits RC_NOC_DEADLOCK: one transaction on the cycle, DMA->PCIE txn 0xE470, never completes and times out (rc=-62), even though overall fabric load is low by then. The repeated PCIE<->DDR congestio"
+        },
+        {
+          "step": 8,
+          "tool": "get_context",
+          "agent": "specialist:PCIE",
+          "input": {
+            "start_ms": 4000,
+            "end_ms": 4800,
             "include_info": true,
             "subsystem": "PCIE"
           },
-          "output": "[00:00:00.298] PCIE: INFO: Controller reset | gen=4 lanes=x4\n[00:00:00.325] PCIE: INFO: LTSSM -> Detect | lane=0\n[00:00:00.371] PCIE: INFO: Link up | width=x4 speed=32GT/s",
+          "output": "[00:00:04.036] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=35 aer=0\n[00:00:04.043] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=35 aer=0\n[00:00:04.085] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=35 aer=0\n[00:00:04.108] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=35 aer=0\n[00:00:04.118] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=35 aer=0\n[00:00:04.132] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=36 aer=0\n[00:00:04.144] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=37 aer=0\n[00:00:04.152] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=37 aer=0\n[00:00:04.228] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=37 aer=0\n[00:00:04.293] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=37 aer=0\n[00:00:04.382] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=38 aer=0\n[00:00:04.390] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=39 aer=0\n[00:00:04.427] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=39 aer=0\n[00:00:04.483] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=40 aer=0\n[00:00:04.506] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=41 aer=0\n[00:00:04.520] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.526] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.591] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=42 aer=0\n[00:00:04.604] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=43 aer=0\n[00:00:04.658] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=43 aer=0\n[00:00:04.662] PCIE: INFO: Link stats | gen=4 lanes=x4 retra",
           "note": ""
+        },
+        {
+          "step": 9,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:PCIE",
+          "input": {},
+          "output": "Root causes the PCIE specialist can recognise:\n- RC_PCIE_REFCLK_GATING: Reference clock instability / gating during link training  (tell-tales: refclk instability, refclk)\n- RC_PCIE_SI_MARGIN_LOW: Lane signal-integrity margin below the receiver threshold  (tell-tales: lane margining below threshold, eye_width)\n- RC_PCIE_ASPM_MISCONFIG: ASPM L1 substate entered while training, gating the link clock  (tell-tales: aspm l1 entry during training, aspm)\n- RC_PCIE_EQ_TUNING: Equalization preset/coefficients fail to converge at the negotiated speed  (tell-tales: equalization phase failed, eq_fail)",
+          "note": ""
+        },
+        {
+          "step": 10,
+          "tool": "get_context",
+          "agent": "specialist:PCIE",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 4000,
+            "include_info": false,
+            "subsystem": "PCIE"
+          },
+          "output": "No matching lines between 0 and 4000 ms.",
+          "note": ""
+        },
+        {
+          "step": 11,
+          "tool": "search_incidents",
+          "agent": "specialist:PCIE",
+          "input": {
+            "query": "PCIE Link stats retrain increasing aer=0 NOC timeout dst=PCIE",
+            "top_k": 5
+          },
+          "output": "- run 000001 | PCIE_TIMEOUT | root_cause=RC_PCIE_REFCLK_GATING | similarity=0.6779\n    PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fa\n- run 000001 | THERMAL_TRIP | root_cause=RC_FAN_PROFILE_BAD | similarity=0.4193\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step\n- run 000003 | NOC_TIMEOUT | root_cause=RC_NOC_QOS_STARVATION | similarity=0.33\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: QoS credit starvation\n- run 000010 | NOC_TIMEOUT | root_cause=RC_DMA_BURST_OVERFLOW | similarity=0.3083\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow\n- run 000016 | DDR_ECC | root_cause=RC_DDR_TIMING_VIOLATION | similarity=0.296\n    DDR_ECC | DDR: ECC uncorrectable error ; FW: Memtest mismatch ; DDR: DDR PHY register snapshot ; SYSTEM: DDR subsystem failure ; DDR: ECC corrected errors rising ; DDR: Timing parameter violation ; DDR: Read retry invoke",
+          "note": ""
+        },
+        {
+          "step": 12,
+          "tool": "get_context",
+          "agent": "specialist:PCIE",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 4000,
+            "include_info": true,
+            "subsystem": "PCIE"
+          },
+          "output": "[00:00:00.298] PCIE: INFO: Controller reset | gen=4 lanes=x4\n[00:00:00.325] PCIE: INFO: LTSSM -> Detect | lane=0\n[00:00:00.371] PCIE: INFO: Link up | width=x4 speed=32GT/s\n[00:00:00.440] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=0 aer=0\n[00:00:00.446] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=0 aer=0\n[00:00:00.477] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=0 aer=0\n[00:00:00.483] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=1 aer=0\n[00:00:00.486] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=1 aer=0\n[00:00:00.728] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=1 aer=0\n[00:00:00.736] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=1 aer=0\n[00:00:00.763] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=2 aer=0\n[00:00:00.832] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=3 aer=0\n[00:00:00.866] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=3 aer=0\n[00:00:00.946] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=4 aer=0\n[00:00:00.964] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=4 aer=0\n[00:00:00.978] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=4 aer=0\n[00:00:00.983] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=5 aer=0\n[00:00:01.017] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=5 aer=0\n[00:00:01.045] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=6 aer=0\n[00:00:01.124] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=6 aer=0\n[00:00:01.136] PCIE: INFO: Link stats | gen=4 lanes=x4 retrain=6 aer=0\n[00:00:01.160] PCIE: INFO: Link stats | gen=4 lane",
+          "note": ""
+        },
+        {
+          "step": 13,
+          "tool": "read_block",
+          "agent": "specialist:PCIE",
+          "input": {
+            "ts_ms": 4780
+          },
+          "output": "No multi-line blocks in this run.",
+          "note": ""
+        },
+        {
+          "step": 14,
+          "tool": "report_finding",
+          "agent": "specialist:PCIE",
+          "input": {},
+          "output": "NONE (0.60): There are no PCIE WARN or ERROR lines anywhere from 0 to 4800 ms. The link came up cleanly: controller reset at 298 ms, LTSSM -> Detect at 325 ms, and link up x4 at 32GT/s at 371 ms. After that, the periodic Link stats lines always read gen=4 lanes=x4 aer=0, so the link never lost width or speed and never logged an AER error. The retrain counter climbs at a steady rate from boot: 0 at 440 ms, 16 at about 1.9 s, 29 at about 3.2 s, 35 at 4036 ms, and 44 at 4662 ms. That is roughly 9–10 retrains per second the whole run, about 14 per second in the last 600 ms. It never jumps sharply before the fa",
+          "note": "From the PCIE logs, nothing shows the endpoint was stalled or unable to accept the DMA transaction at 4738 ms. The link stayed at x4 Gen4 with aer=0, and there were no completion timeouts or credit-exhaustion messages. The only oddity is a retrain counter that keeps rising (44 by 4662 ms). It has ri"
+        },
+        {
+          "step": 15,
+          "tool": "get_context",
+          "agent": "specialist:PMU",
+          "input": {
+            "start_ms": 4500,
+            "end_ms": 4800,
+            "include_info": true,
+            "subsystem": "PMU"
+          },
+          "output": "[00:00:04.636] PMU: INFO: Rail telemetry | rail=VCORE mv=884 i_ma=680 droop_cnt=0\n[00:00:04.643] PMU: INFO: Rail telemetry | rail=VCORE mv=924 i_ma=589 droop_cnt=0\n[00:00:04.660] PMU: INFO: Rail telemetry | rail=VCORE mv=881 i_ma=382 droop_cnt=0\n[00:00:04.694] PMU: INFO: Rail telemetry | rail=VCORE mv=889 i_ma=663 droop_cnt=0\n[00:00:04.771] PMU: INFO: Rail telemetry | rail=VCORE mv=884 i_ma=537 droop_cnt=0",
+          "note": ""
+        },
+        {
+          "step": 16,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:PMU",
+          "input": {},
+          "output": "Root causes the PMU specialist can recognise:\n- RC_LOAD_STEP_SPIKE: A fast di/dt load step exceeds the regulator slew capability  (tell-tales: load step detected, cause=load_step, di_dt)\n- RC_INSUFFICIENT_DECOUPLING: Insufficient decoupling causes undershoot/ringing after a transient  (tell-tales: rail ringing after transient, undershoot_mv)\n- RC_REGULATOR_LIMIT: Regulator reaches its current limit and folds back  (tell-tales: regulator current limit hit, cause=regulator_limit, i_limit)",
+          "note": ""
+        },
+        {
+          "step": 17,
+          "tool": "get_context",
+          "agent": "specialist:PMU",
+          "input": {
+            "start_ms": 3500,
+            "end_ms": 4800,
+            "include_info": false,
+            "subsystem": "PMU"
+          },
+          "output": "No matching lines between 3500 and 4800 ms.",
+          "note": ""
+        },
+        {
+          "step": 18,
+          "tool": "report_finding",
+          "agent": "specialist:PMU",
+          "input": {},
+          "output": "NONE (0.80): From 3500 to 4800 ms the PMU logged no WARN or ERROR lines at all. Between 4500 and 4800 ms there are only 5 INFO VCORE rail telemetry samples, at 4636, 4643, 4660, 4694 and 4771 ms. Voltage was 881–924 mV, current 382–680 mA, and droop_cnt=0 in every sample, including the one at 4771 ms, between the txn 0xE470 timeout (4738) and the fatal (4799). There are no power-state change, clock-gating, DVFS/reclock, load-step, rail-ringing/undershoot or regulator current-limit events. The PMU log shows nothing gating or reclocking NOC0, DMA or PCIE while txn 0xE470 was in flight. One caveat: telemetry ",
+          "note": "The PMU does not look like the cause. VCORE stayed stable with no droops, and there were no power or clock events in the window, so none of the power root causes in the catalogue (load step, decoupling, regulator limit) are supported. The timeout probably started in the interconnect or DMA path, whi"
+        },
+        {
+          "step": 19,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 4000,
+            "end_ms": 4800,
+            "include_info": true,
+            "subsystem": "FW"
+          },
+          "output": "[00:00:04.053] FW: INFO: Loop tick | i=453\n[00:00:04.075] FW: INFO: Loop tick | i=456\n[00:00:04.129] FW: INFO: Loop tick | i=464\n[00:00:04.151] FW: INFO: Checkpoint | i=469\n[00:00:04.195] FW: INFO: Checkpoint | i=474\n[00:00:04.215] FW: INFO: Loop tick | i=477\n[00:00:04.347] FW: INFO: Checkpoint | i=492\n[00:00:04.362] FW: INFO: Heartbeat | i=494\n[00:00:04.394] FW: INFO: Heartbeat | i=498\n[00:00:04.419] FW: INFO: Loop tick | i=501\n[00:00:04.576] FW: INFO: Heartbeat | i=518\n[00:00:04.720] FW: INFO: Heartbeat | i=535\n[00:00:04.790] FW: INFO: Heartbeat | i=544",
+          "note": ""
+        },
+        {
+          "step": 20,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:FW",
+          "input": {},
+          "output": "Root causes the FW specialist can recognise:\n- RC_FW_RACE_CONDITION: Race between service threads on a shared lock  (tell-tales: mutex contention timeout, lock=)\n- RC_FW_NULL_DEREF: Null-pointer dereference in a service handler  (tell-tales: fault address near null, dfar=0x0000)\n- RC_FW_STACK_OVERFLOW: Task stack overflow corrupts the return frame  (tell-tales: stack watermark exceeded, used_pct)",
+          "note": ""
+        },
+        {
+          "step": 21,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 4800,
+            "include_info": false,
+            "subsystem": "FW"
+          },
+          "output": "No matching lines between 0 and 4800 ms.",
+          "note": "Let me check the broader window and non-FW lines for DMA setup info."
+        },
+        {
+          "step": 22,
+          "tool": "read_block",
+          "agent": "specialist:FW",
+          "input": {
+            "ts_ms": 4780
+          },
+          "output": "No multi-line blocks in this run.",
+          "note": ""
+        },
+        {
+          "step": 23,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 4500,
+            "end_ms": 4800,
+            "include_info": true,
+            "subsystem": ""
+          },
+          "output": "[00:00:04.576] FW: INFO: Heartbeat | i=518\n[00:00:04.720] FW: INFO: Heartbeat | i=535\n[00:00:04.790] FW: INFO: Heartbeat | i=544",
+          "note": ""
+        },
+        {
+          "step": 24,
+          "tool": "report_finding",
+          "agent": "specialist:FW",
+          "input": {},
+          "output": "NONE (0.75): From 0 to 4800 ms the FW log has no WARN, ERROR or FATAL lines at all. Between 4000 and 4800 ms it holds only routine INFO telemetry: Loop tick, Checkpoint and Heartbeat lines, with the counter going from i=453 to i=544. The cadence is steady right through the error window, with Heartbeats at 4.576 s (i=518), 4.720 s (i=535) and 4.790 s (i=544). That means firmware was still running 18 ms before and 52 ms after the 4738 ms timeout. FW did not log any DMA descriptor setup for txn_id=0xE470, so burst size, descriptor count and PCIE target address cannot be recovered from FW logs. FW also logged ",
+          "note": "From the FW side this does not look like a firmware failure. None of the FW root-cause signs from the catalogue are present (race: 'mutex contention timeout'/lock=; null deref: dfar=0x0000; stack overflow: 'stack watermark exceeded'/used_pct). Firmware kept running normally through the timeout. FW l"
+        },
+        {
+          "step": 25,
+          "tool": "submit_hypothesis",
+          "agent": "reviewer",
+          "input": {},
+          "output": "RC_NOC_DEADLOCK (0.55) | chain: Dependency cycle forms on ring R1 (3921 ms) -> repeated high txn_q congestion on PCIE<->DDR (stall 28–33%, 3929–4308 ms) as routes on the cycle back up -> the cycle locks up; transactions stuck on it stop moving, so overall fabric telemetry drops to low (stall 1–3%) -> DMA->PCIE txn 0xE470 never completes -> NOC transaction timeout rc=-62 (4738 ms) -> NOC0 error register snapshot -> SYSTEM FATAL interconnect failure (4799 ms)",
+          "note": "I'm submitting RC_NOC_DEADLOCK at moderate confidence (0.55). It's the only root cause with a matching marker in the log, but nothing yet confirms that transaction 0xE470 was on the suspected cycle."
         }
       ]
     }
   ],
-  "generated_at": "2026-11-03T23:25:30+00:00"
+  "generated_at": "2026-11-04T00:19:45+00:00"
 }

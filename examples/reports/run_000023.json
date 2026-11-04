@@ -66,15 +66,16 @@
     {
       "failure_id": "000023:PMU_DROOP",
       "cluster_id": 4,
-      "root_cause": "The VCORE regulator hit its 2000 mA current limit and folded back, so VCORE dropped from 850 to 611 mV, below the 750 mV brown-out threshold. The SoC hung, and the watchdog then asserted reset (BROWNOUT_WDOG).",
+      "root_cause": "The VCORE regulator hit its 2000 mA current limit (OCP) and folded back. That caused a fast droop from 850 to 611 mV and crossed the 750 mV brown-out threshold. The brown-out started a watchdog. Nothing cleared it, so it expired 3733 ms later and asserted SoC reset (reason=BROWNOUT_WDOG).",
       "root_cause_id": "RC_REGULATOR_LIMIT",
-      "confidence": 0.82,
-      "rationale": "Event order in the window before the first error: VCORE was steady at 845–864 mV and 1.07–1.32 A, with droop_cnt=0. At 4432 ms the PMU logged 'Regulator current limit hit | i_limit_ma=2000 rail=VCORE'. At 4448 ms it logged 'Fast droop event mv_before=850 mv_after=611 cause=regulator_limit'. At 4457 ms the brown-out threshold (750 mV) was crossed. The FW watchdog timed out 3733 ms later and the SoC reset with reason=BROWNOUT_WDOG. All of these match the catalogue's RC_REGULATOR_LIMIT tell-tales (current limit hit, cause=regulator_limit, i_limit). There is no 'load step detected'/di_dt marker and no ringing or undershoot_mv signature, which argues against RC_LOAD_STEP_SPIKE and RC_INSUFFICIENT_DECOUPLING. NOC queue depth and DDR activity rose just before the event (txn_q=high), so a workload burst probably pushed the peak current past the limit. The ~10 ms telemetry did not catch the >2 A peak, so the transient was fast. The retrieved historical incidents are all THERMAL_TRIP or NOC failures and do not apply. I set confidence below 0.9 for two reasons: this signature has been seen only once, and a load step that hits the current limit cannot be fully ruled out without a high-rate current capture.",
+      "confidence": 0.78,
+      "rationale": "Causal chain: VCORE current spike past the 2000 mA limit (4.432 s) -> regulator current-limit foldback -> fast droop 850->611 mV, cause=regulator_limit (4.448 s) -> brown-out threshold of 750 mV crossed (4.457 s) -> watchdog started by the brown-out, never cleared even though the rail recovered (~4.56 s) and firmware kept running -> watchdog timeout after wd_ms=3733 = 8190-4457 (8.190 s) -> SoC reset BROWNOUT_WDOG (8.192 s). The PMU log matches the RC_REGULATOR_LIMIT signature exactly: an explicit \"Regulator current limit hit i_limit_ma=2000\" line 16 ms before the droop, and the droop itself is tagged cause=regulator_limit. The other possible causes were each ruled out by a different specialist. There are no load_step or di/dt markers (rules out RC_LOAD_STEP_SPIKE). There is no ringing or undershoot, and the rail recovered cleanly within about 100 ms (rules out RC_INSUFFICIENT_DECOUPLING). Firmware shows no DVFS changes or workload bursts, and thermal shows a flat 53–57 °C with no power-burst line (rules out RC_WORKLOAD_BURST and the thermal causes). DDR shows no traffic burst and no damage after the event (rules out RC_DMA_BURST_OVERFLOW). The firmware specialist found that wd_ms equals the time since the brown-out exactly, and firmware heartbeats continued the whole time. So the reset was set off by the brown-out, not by a firmware hang. The historian's similar incidents are all THERMAL_TRIP or NOC runs and don't match. I'm keeping confidence below 0.85 for two reasons. First, the cause of the current going over 2 A wasn't captured, because telemetry samples too slowly to see it. Second, the 2 A limit hasn't been checked against the VCORE spec. A normal peak of about 1.4 A leaves only about 30% headroom, which suggests the limit is set too low or the regulator is undersized. (1 of 4 specialists pointed at this cause.)",
       "recommended_actions": [
-        "Capture VCORE current and voltage on a high-bandwidth scope during the same workload phase to measure the real peak current against the 2000 mA OCP setting.",
-        "Raise the regulator OCP/current limit, or enable more phases (confirm the phase count is sized for the measured peak), then rerun the test to confirm the brown-out is gone.",
-        "As a cross-check, throttle the workload/DVFS ramp seen around 4.2–4.45 s (NOC txn_q=high). If the failure goes away, the peak demand is confirmed as the trigger.",
-        "Fix the reset path: make the brown-out handler reset immediately instead of waiting ~3.7 s for the watchdog."
+        "Check the VCORE OCP setting (i_limit_ma=2000) against the rail's spec and the SoC's worst-case current. Rerun with the limit raised, for example to 2.5–3 A, and confirm the droop and brown-out don't come back.",
+        "Put a scope or current probe on VCORE, triggered on the regulator's current-limit flag, to capture the transient that crosses 2 A. Fast PMU telemetry would also work. This tells us what is drawing the current.",
+        "Dump the regulator's PMBus/OCP status, fold-back mode and LLC registers when the event happens. This run had no register dumps.",
+        "Review the brown-out watchdog design. Find out why the watchdog started by the brown-out isn't cleared once VCORE comes back within spec, and whether firmware should acknowledge the brown-out.",
+        "Run a margin sweep: different workloads at reduced OCP limits to measure the actual headroom."
       ],
       "supporting_evidence": [
         "[00:00:04.432] PMU: WARN: Regulator current limit hit | i_limit_ma=2000 rail=VCORE",
@@ -125,29 +126,240 @@
           "distance": 0.6381949782371521
         }
       ],
-      "source": "llm:claude-opus-5-5:agentic",
+      "source": "llm:claude-opus-5-5:multiagent",
       "trace": [
         {
           "step": 1,
-          "tool": "lookup_catalogue",
+          "tool": "plan_investigation",
+          "agent": "triage",
           "input": {},
-          "output": "Prior for PMU_DROOP: VCORE brown-out from a fast load-step droop crossing the reset threshold\nA fast droop event drops VCORE below the brown-out threshold, the SoC hangs, and the watchdog fires — classic insufficient decoupling / regulator load-step response under a workload transient.\n\n- RC_LOAD_STEP_SPIKE: A fast di/dt load step exceeds the regulator slew capability\n    tell-tales: load step detected, cause=load_step, di_dt\n    actions: Throttle the DVFS/workload ramp producing the load step; Enable adaptive voltage positioning on the rail\n- RC_INSUFFICIENT_DECOUPLING: Insufficient decoupling causes undershoot/ringing after a transient\n    tell-tales: rail ringing after transient, undershoot_mv\n    actions: Add bulk and high-frequency decoupling close to the package; Re-simulate the PDN impedance profile\n- RC_REGULATOR_LIMIT: Regulator reaches its current limit and folds back\n    tell-tales: regulator current limit hit, cause=regulator_limit, i_limit\n    actions: Raise the regulator OCP limit or split the load across phases; Confirm the regulator phase count for the measured peak current",
-          "note": ""
+          "output": "PMU: At 4.448s VCORE dropped fast from 850 to 611 mV with cause=regulator_limit, then the 750 mV brown-out threshold was crossed at 4.457s. What load-current step or DVFS transition came right before the droop? Did the regulator hit its current limit (OCP) or a slew limit? Did VCORE recover after the event or stay below threshold until reset? Check the regulator configuration (current limit, droop/LLC settings) against the spec.; FW: The watchdog timed out at 8.190s (wd_ms=3733), which lines up exactly with the brown-out at 4.457s. Did firmware hang because of the brown-out, for example a CPU stall or corrupted state at undervoltage? Or was firmware already stuck or running a heavy workload (DVFS request, power-virus-like burst) that caused the current spike at about 4.44s? List the firmware activity and any frequency or voltage change requests from 4.3 to 4.46s.; THERMAL: Similar past incidents were THERMAL_TRIP caused by RC_WORKLOAD_BURST, fan profile or heatsink problems. Around 4.4s, were temperatures high or rising quickly? Was there a thermal throttle or a missing throttle, or was leakage high enough to push VCORE current toward the regulator limit? Did the fan or cooling state change?; DDR: Was there a burst of DDR or memory traffic (training, refresh storm, large DMA) around 4.40 to 4.45s that could have contributed to a VCORE load step? Also, were there DDR errors after the droop at 4.457s that suggest it was a downstream victim of the brown-out?",
+          "note": "The chain of events is clear: VCORE fast droop (regulator_limit) leads to brown-out, then a watchdog timeout, then SoC reset. PMU owns the failing rail and the regulator limit. FW needs checking to tell whether the watchdog was a downstream effect or whether a firmware-driven DVFS change or workload caused the current step. THERMAL is a common upstream cause, and the similar past incidents point to workload-burst thermal problems and leakage. DDR (one of the more active subsystems) could explain the load step or be a downstream victim. PCIE and NOC are lower priority."
         },
         {
           "step": 2,
           "tool": "get_context",
+          "agent": "specialist:PMU",
           "input": {
-            "start_ms": 3900,
-            "end_ms": 4500,
+            "start_ms": 3500,
+            "end_ms": 8200,
+            "include_info": true,
+            "subsystem": "PMU"
+          },
+          "output": "[00:00:03.523] PMU: INFO: Rail telemetry | rail=VCORE mv=828 i_ma=1146 droop_cnt=0\n[00:00:03.556] PMU: INFO: Rail telemetry | rail=VCORE mv=845 i_ma=1340 droop_cnt=0\n[00:00:03.568] PMU: INFO: Rail telemetry | rail=VCORE mv=841 i_ma=1211 droop_cnt=0\n[00:00:03.601] PMU: INFO: Rail telemetry | rail=VCORE mv=828 i_ma=1006 droop_cnt=0\n[00:00:03.673] PMU: INFO: Rail telemetry | rail=VCORE mv=827 i_ma=1120 droop_cnt=0\n[00:00:03.695] PMU: INFO: Rail telemetry | rail=VCORE mv=827 i_ma=1360 droop_cnt=0\n[00:00:03.697] PMU: INFO: Rail telemetry | rail=VCORE mv=860 i_ma=1368 droop_cnt=0\n[00:00:03.737] PMU: INFO: Rail telemetry | rail=VCORE mv=868 i_ma=1207 droop_cnt=0\n[00:00:03.829] PMU: INFO: Rail telemetry | rail=VCORE mv=841 i_ma=1161 droop_cnt=0\n[00:00:04.100] PMU: INFO: Rail telemetry | rail=VCORE mv=864 i_ma=1281 droop_cnt=0\n[00:00:04.301] PMU: INFO: Rail telemetry | rail=VCORE mv=845 i_ma=1191 droop_cnt=0\n[00:00:04.376] PMU: INFO: Rail telemetry | rail=VCORE mv=863 i_ma=1136 droop_cnt=0\n[00:00:04.388] PMU: INFO: Rail telemetry | rail=VCORE mv=859 i_ma=1322 droop_cnt=0\n[00:00:04.421] PMU: INFO: Rail telemetry | rail=VCORE mv=852 i_ma=1074 droop_cnt=0\n[00:00:04.432] PMU: WARN: Regulator current limit hit | i_limit_ma=2000 rail=VCORE\n[00:00:04.448] PMU: WARN: Fast droop event | rail=VCORE mv_before=850 mv_after=611 cause=regulator_limit\n[00:00:04.457] PMU: ERROR: Brown-out threshold crossed | threshold_mv=750\n[00:00:04.563] PMU: INFO: Rail telemetry | rail=VCORE mv=870 i_ma=1231 droop",
+          "note": ""
+        },
+        {
+          "step": 3,
+          "tool": "read_block",
+          "agent": "specialist:PMU",
+          "input": {
+            "ts_ms": 4457
+          },
+          "output": "No multi-line blocks in this run.",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:PMU",
+          "input": {},
+          "output": "Root causes the PMU specialist can recognise:\n- RC_LOAD_STEP_SPIKE: A fast di/dt load step exceeds the regulator slew capability  (tell-tales: load step detected, cause=load_step, di_dt)\n- RC_INSUFFICIENT_DECOUPLING: Insufficient decoupling causes undershoot/ringing after a transient  (tell-tales: rail ringing after transient, undershoot_mv)\n- RC_REGULATOR_LIMIT: Regulator reaches its current limit and folds back  (tell-tales: regulator current limit hit, cause=regulator_limit, i_limit)",
+          "note": ""
+        },
+        {
+          "step": 5,
+          "tool": "report_finding",
+          "agent": "specialist:PMU",
+          "input": {},
+          "output": "RC_REGULATOR_LIMIT (0.80): The VCORE regulator hit its current limit. At 4.432 s the PMU logged \"Regulator current limit hit | i_limit_ma=2000 rail=VCORE\". 16 ms later, at 4.448 s, a fast droop took VCORE from 850 to 611 mV (cause=regulator_limit). That is 239 mV, or 139 mV below the 750 mV brown-out threshold, which tripped at 4.457 s. Before the event the rail looked normal: VCORE 828–868 mV, current 1006–1368 mA, with the last samples at 4.388 s (859 mV / 1322 mA) and 4.421 s (852 mV / 1074 mA). The PMU log has no load-step, di/dt or DVFS transition record and no ringing or undershoot record. Telemetry sampling is to",
+          "note": "From the PMU side, the VCORE regulator reached its 2000 mA current limit and folded back, which caused the 850→611 mV droop and the brown-out. This matches the catalogue's RC_REGULATOR_LIMIT signature (\"regulator current limit hit\" plus cause=regulator_limit). It does not match a slew-limited load s"
+        },
+        {
+          "step": 6,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 4000,
+            "end_ms": 4470,
             "include_info": true,
             "subsystem": ""
           },
-          "output": "[00:00:03.904] THERMAL: INFO: Temp sample | t_c=56 sensor=3\n[00:00:03.911] FW: INFO: Loop tick | i=423\n[00:00:03.920] FW: INFO: Checkpoint | i=424\n[00:00:03.927] FW: INFO: Heartbeat | i=425\n[00:00:03.939] DDR: INFO: DDR counters | ecc_corr=71 ecc_ue=0 rd_lat_ns=81\n[00:00:03.951] FW: INFO: Loop tick | i=427\n[00:00:03.964] FW: INFO: Checkpoint | i=428\n[00:00:03.975] THERMAL: INFO: Temp sample | t_c=56 sensor=0\n[00:00:03.982] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=1\n[00:00:03.993] FW: INFO: Heartbeat | i=431\n[00:00:04.008] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=4\n[00:00:04.020] THERMAL: INFO: Temp sample | t_c=53 sensor=0\n[00:00:04.035] PCIE: INFO: Link stats | gen=4 lanes=x8 retrain=31 aer=0\n[00:00:04.038] DDR: INFO: DDR counters | ecc_corr=72 ecc_ue=0 rd_lat_ns=78\n[00:00:04.045] DDR: INFO: DDR counters | ecc_corr=72 ecc_ue=0 rd_lat_ns=79\n[00:00:04.057] THERMAL: INFO: Temp sample | t_c=56 sensor=1\n[00:00:04.066] THERMAL: INFO: Temp sample | t_c=53 sensor=1\n[00:00:04.071] DDR: INFO: DDR counters | ecc_corr=72 ecc_ue=0 rd_lat_ns=73\n[00:00:04.085] THERMAL: INFO: Temp sample | t_c=56 sensor=1\n[00:00:04.100] PMU: INFO: Rail telemetry | rail=VCORE mv=864 i_ma=1281 droop_cnt=0\n[00:00:04.114] PCIE: INFO: Link stats | gen=4 lanes=x8 retrain=32 aer=0\n[00:00:04.123] PCIE: INFO: Link stats | gen=4 lanes=x8 retrain=33 aer=0\n[00:00:04.126] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00:00:04.130] THERMAL: INFO: Temp sample | t_c=56 sensor=3\n[00:00:04.145] FW: I",
+          "output": "[00:00:04.145] FW: INFO: Heartbeat | i=446\n[00:00:04.241] FW: INFO: Loop tick | i=457\n[00:00:04.313] FW: INFO: Loop tick | i=466\n[00:00:04.438] FW: INFO: Heartbeat | i=477",
+          "note": ""
+        },
+        {
+          "step": 7,
+          "tool": "read_block",
+          "agent": "specialist:FW",
+          "input": {
+            "ts_ms": 8190
+          },
+          "output": "No multi-line blocks in this run.",
+          "note": ""
+        },
+        {
+          "step": 8,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:FW",
+          "input": {},
+          "output": "Root causes the FW specialist can recognise:\n- RC_FW_RACE_CONDITION: Race between service threads on a shared lock  (tell-tales: mutex contention timeout, lock=)\n- RC_FW_NULL_DEREF: Null-pointer dereference in a service handler  (tell-tales: fault address near null, dfar=0x0000)\n- RC_FW_STACK_OVERFLOW: Task stack overflow corrupts the return frame  (tell-tales: stack watermark exceeded, used_pct)",
+          "note": ""
+        },
+        {
+          "step": 9,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 4440,
+            "end_ms": 8200,
+            "include_info": true,
+            "subsystem": "FW"
+          },
+          "output": "[00:00:04.496] FW: INFO: Checkpoint | i=482\n[00:00:04.686] FW: INFO: Checkpoint | i=507\n[00:00:04.713] FW: INFO: Loop tick | i=510\n[00:00:04.826] FW: INFO: Heartbeat | i=521\n[00:00:04.842] FW: INFO: Loop tick | i=523\n[00:00:04.859] FW: INFO: Checkpoint | i=525\n[00:00:04.896] FW: INFO: Loop tick | i=531\n[00:00:04.962] FW: INFO: Loop tick | i=538\n[00:00:04.981] FW: INFO: Checkpoint | i=540\n[00:00:05.016] FW: INFO: Loop tick | i=546\n[00:00:05.031] FW: INFO: Heartbeat | i=547\n[00:00:05.042] FW: INFO: Heartbeat | i=549\n[00:00:05.052] FW: INFO: Loop tick | i=551\n[00:00:05.074] FW: INFO: Heartbeat | i=554\n[00:00:05.078] FW: INFO: Heartbeat | i=555\n[00:00:05.156] FW: INFO: Checkpoint | i=568\n[00:00:05.252] FW: INFO: Loop tick | i=581\n[00:00:05.256] FW: INFO: Heartbeat | i=582\n[00:00:05.383] FW: INFO: Heartbeat | i=597\n[00:00:05.520] FW: INFO: Loop tick | i=615\n[00:00:05.534] FW: INFO: Checkpoint | i=617\n[00:00:05.560] FW: INFO: Loop tick | i=622\n[00:00:05.678] FW: INFO: Checkpoint | i=638\n[00:00:05.696] FW: INFO: Checkpoint | i=640\n[00:00:05.713] FW: INFO: Heartbeat | i=643\n[00:00:05.724] FW: INFO: Loop tick | i=646\n[00:00:05.740] FW: INFO: Loop tick | i=648\n[00:00:05.752] FW: INFO: Loop tick | i=649\n[00:00:05.797] FW: INFO: Loop tick | i=654\n[00:00:05.897] FW: INFO: Checkpoint | i=666\n[00:00:05.920] FW: INFO: Loop tick | i=670\n[00:00:05.922] FW: INFO: Loop tick | i=671\n[00:00:05.923] FW: INFO: Checkpoint | i=672\n[00:00:05.938] FW: INFO: Loop tick | i=673\n[00:00:05.949] FW: INFO: Loo",
+          "note": ""
+        },
+        {
+          "step": 10,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 4000,
+            "include_info": false,
+            "subsystem": "FW"
+          },
+          "output": "No matching lines between 0 and 4000 ms.",
+          "note": ""
+        },
+        {
+          "step": 11,
+          "tool": "report_finding",
+          "agent": "specialist:FW",
+          "input": {},
+          "output": "NONE (0.80): From 4.30 to 4.46 s firmware logged only routine INFO telemetry: Loop tick i=466 at 4.313, Heartbeat i=477 at 4.438. No DVFS, frequency or voltage change requests, no workload or burst start markers, and no WARN or ERROR lines. The loop counter rose at its normal rate (i=446 at 4.145 to i=477 at 4.438, about 10 iterations per 100 ms). After the droop (4.448) and brown-out (4.457), firmware kept running without a break. There are about 85 Heartbeat/Loop tick/Checkpoint lines between 4.496 and 8.179 s, ending with Heartbeat i=958 at 8.179, 11 ms before the watchdog error at 8.190. The counter we",
+          "note": "Firmware neither caused nor was hurt by the event. It made no DVFS or voltage requests and showed no burst or heavy-workload activity before the 4.448 s droop. It also did not hang or stall afterwards: heartbeats and loop ticks continued at the normal rate right up to 8.179 s. The watchdog timeout t"
+        },
+        {
+          "step": 12,
+          "tool": "get_context",
+          "agent": "specialist:THERMAL",
+          "input": {
+            "start_ms": 2000,
+            "end_ms": 8200,
+            "include_info": true,
+            "subsystem": "THERMAL"
+          },
+          "output": "[00:00:02.005] THERMAL: INFO: Temp sample | t_c=54 sensor=2\n[00:00:02.016] THERMAL: INFO: Temp sample | t_c=55 sensor=3\n[00:00:02.144] THERMAL: INFO: Temp sample | t_c=54 sensor=2\n[00:00:02.158] THERMAL: INFO: Temp sample | t_c=53 sensor=0\n[00:00:02.259] THERMAL: INFO: Temp sample | t_c=57 sensor=1\n[00:00:02.284] THERMAL: INFO: Temp sample | t_c=53 sensor=2\n[00:00:02.288] THERMAL: INFO: Temp sample | t_c=53 sensor=0\n[00:00:02.302] THERMAL: INFO: Temp sample | t_c=56 sensor=0\n[00:00:02.326] THERMAL: INFO: Temp sample | t_c=55 sensor=2\n[00:00:02.348] THERMAL: INFO: Temp sample | t_c=55 sensor=2\n[00:00:02.358] THERMAL: INFO: Temp sample | t_c=55 sensor=3\n[00:00:02.442] THERMAL: INFO: Temp sample | t_c=55 sensor=3\n[00:00:02.465] THERMAL: INFO: Temp sample | t_c=53 sensor=0\n[00:00:02.497] THERMAL: INFO: Temp sample | t_c=55 sensor=1\n[00:00:02.526] THERMAL: INFO: Temp sample | t_c=56 sensor=2\n[00:00:02.540] THERMAL: INFO: Temp sample | t_c=54 sensor=1\n[00:00:02.605] THERMAL: INFO: Temp sample | t_c=53 sensor=0\n[00:00:02.629] THERMAL: INFO: Temp sample | t_c=53 sensor=1\n[00:00:02.635] THERMAL: INFO: Temp sample | t_c=53 sensor=0\n[00:00:02.648] THERMAL: INFO: Temp sample | t_c=56 sensor=3\n[00:00:02.705] THERMAL: INFO: Temp sample | t_c=57 sensor=1\n[00:00:02.793] THERMAL: INFO: Temp sample | t_c=54 sensor=3\n[00:00:02.859] THERMAL: INFO: Temp sample | t_c=57 sensor=0\n[00:00:02.972] THERMAL: INFO: Temp sample | t_c=57 sensor=1\n[00:00:02.983] THERMAL: INFO: Temp sample | t_c=56 sensor=1\n",
+          "note": ""
+        },
+        {
+          "step": 13,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:THERMAL",
+          "input": {},
+          "output": "Root causes the THERMAL specialist can recognise:\n- RC_HEATSINK_POOR: Poor heatsink/TIM contact — large die-to-ambient delta  (tell-tales: sensor-to-ambient delta high, delta_c)\n- RC_FAN_PROFILE_BAD: Fan speed stays below the profile target as temperature rises  (tell-tales: fan speed below profile, target_rpm)\n- RC_WORKLOAD_BURST: A sustained power burst outruns the cooling headroom  (tell-tales: power burst detected, p_w=)",
+          "note": ""
+        },
+        {
+          "step": 14,
+          "tool": "get_context",
+          "agent": "specialist:THERMAL",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 8200,
+            "include_info": false,
+            "subsystem": "THERMAL"
+          },
+          "output": "No matching lines between 0 and 8200 ms.",
+          "note": ""
+        },
+        {
+          "step": 15,
+          "tool": "report_finding",
+          "agent": "specialist:THERMAL",
+          "input": {},
+          "output": "NONE (0.85): From 2.0 s to 6.8 s, all four THERMAL sensors (0–3) stayed between 53 and 57 °C, with no upward trend. Readings just before and after the 4.448 s droop were 56 °C on sensor 2 at 4.225 s, 57 °C on sensor 2 at 4.408 s, 57 °C on sensor 2 at 4.523 s, and 53 °C on sensors 1 and 0 at 4.538 s and 4.567 s. From 0 to 8200 ms there are no THERMAL WARN, ERROR or FATAL lines. That means no throttle event, no 'power burst detected p_w=' line (RC_WORKLOAD_BURST marker), no 'fan speed below profile target_rpm' line (RC_FAN_PROFILE_BAD marker), no 'sensor-to-ambient delta high' line (RC_HEATSINK_POOR marker),",
+          "note": "THERMAL does not appear to have caused this. The die stayed at a stable, moderate 53–57 °C, so heat-driven leakage is unlikely to have pushed VCORE current toward the regulator limit, and no throttle was needed or missing. The similar THERMAL_TRIP incidents (workload burst, fan, heatsink) do not mat"
+        },
+        {
+          "step": 16,
+          "tool": "get_context",
+          "agent": "specialist:DDR",
+          "input": {
+            "start_ms": 4000,
+            "end_ms": 8300,
+            "include_info": true,
+            "subsystem": "DDR"
+          },
+          "output": "[00:00:04.038] DDR: INFO: DDR counters | ecc_corr=72 ecc_ue=0 rd_lat_ns=78\n[00:00:04.045] DDR: INFO: DDR counters | ecc_corr=72 ecc_ue=0 rd_lat_ns=79\n[00:00:04.071] DDR: INFO: DDR counters | ecc_corr=72 ecc_ue=0 rd_lat_ns=73\n[00:00:04.164] DDR: INFO: DDR counters | ecc_corr=72 ecc_ue=0 rd_lat_ns=79\n[00:00:04.195] DDR: INFO: DDR counters | ecc_corr=72 ecc_ue=0 rd_lat_ns=79\n[00:00:04.196] DDR: INFO: DDR counters | ecc_corr=74 ecc_ue=0 rd_lat_ns=80\n[00:00:04.248] DDR: INFO: DDR counters | ecc_corr=75 ecc_ue=0 rd_lat_ns=75\n[00:00:04.264] DDR: INFO: DDR counters | ecc_corr=75 ecc_ue=0 rd_lat_ns=77\n[00:00:04.278] DDR: INFO: DDR counters | ecc_corr=76 ecc_ue=0 rd_lat_ns=79\n[00:00:04.327] DDR: INFO: DDR counters | ecc_corr=76 ecc_ue=0 rd_lat_ns=80\n[00:00:04.341] DDR: INFO: DDR counters | ecc_corr=78 ecc_ue=0 rd_lat_ns=72\n[00:00:04.402] DDR: INFO: DDR counters | ecc_corr=80 ecc_ue=0 rd_lat_ns=80\n[00:00:04.434] DDR: INFO: DDR counters | ecc_corr=82 ecc_ue=0 rd_lat_ns=74\n[00:00:04.442] DDR: INFO: DDR counters | ecc_corr=83 ecc_ue=0 rd_lat_ns=81\n[00:00:04.457] DDR: INFO: DDR counters | ecc_corr=84 ecc_ue=0 rd_lat_ns=82\n[00:00:04.481] DDR: INFO: DDR counters | ecc_corr=86 ecc_ue=0 rd_lat_ns=72\n[00:00:04.519] DDR: INFO: DDR counters | ecc_corr=88 ecc_ue=0 rd_lat_ns=79\n[00:00:04.553] DDR: INFO: DDR counters | ecc_corr=88 ecc_ue=0 rd_lat_ns=78\n[00:00:04.629] DDR: INFO: DDR counters | ecc_corr=89 ecc_ue=0 rd_lat_ns=78\n[00:00:04.647] DDR: INFO: DDR counters | ecc_corr=90 ecc_ue=0 rd_lat_ns=83\n",
+          "note": ""
+        },
+        {
+          "step": 17,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:DDR",
+          "input": {},
+          "output": "Root causes the DDR specialist can recognise:\n- RC_DDR_TIMING_VIOLATION: A DRAM timing parameter is violated at the configured frequency  (tell-tales: timing parameter violation, trfc, trcd)\n- RC_DDR_TRAINING_EDGE: Read/write training converged on a marginal edge  (tell-tales: read training margin low, margin_ps)\n- RC_PMU_DROOP_UNDER_LOAD: VDDQ droop under load corrupts DRAM accesses  (tell-tales: fast droop event, rail=vddq)\n- RC_DDR_CDC_GLITCH: Clock-domain-crossing synchroniser glitch in the controller  (tell-tales: cdc synchronizer glitch, cdc)",
+          "note": ""
+        },
+        {
+          "step": 18,
+          "tool": "get_context",
+          "agent": "specialist:DDR",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 8300,
+            "include_info": false,
+            "subsystem": "DDR"
+          },
+          "output": "No matching lines between 0 and 8300 ms.",
+          "note": ""
+        },
+        {
+          "step": 19,
+          "tool": "get_context",
+          "agent": "specialist:DDR",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 400,
+            "include_info": true,
+            "subsystem": "DDR"
+          },
+          "output": "[00:00:00.112] DDR: INFO: DDR init start | dram_freq_mhz=3200\n[00:00:00.206] DDR: INFO: Write leveling PASS\n[00:00:00.242] DDR: INFO: Read training PASS",
+          "note": ""
+        },
+        {
+          "step": 20,
+          "tool": "get_context",
+          "agent": "specialist:DDR",
+          "input": {
+            "start_ms": 400,
+            "end_ms": 4000,
+            "include_info": true,
+            "subsystem": "DDR"
+          },
+          "output": "[00:00:00.452] DDR: INFO: DDR counters | ecc_corr=2 ecc_ue=0 rd_lat_ns=80\n[00:00:00.457] DDR: INFO: DDR counters | ecc_corr=3 ecc_ue=0 rd_lat_ns=77\n[00:00:00.492] DDR: INFO: DDR counters | ecc_corr=4 ecc_ue=0 rd_lat_ns=77\n[00:00:00.495] DDR: INFO: DDR counters | ecc_corr=5 ecc_ue=0 rd_lat_ns=77\n[00:00:00.507] DDR: INFO: DDR counters | ecc_corr=7 ecc_ue=0 rd_lat_ns=72\n[00:00:00.565] DDR: INFO: DDR counters | ecc_corr=9 ecc_ue=0 rd_lat_ns=83\n[00:00:00.587] DDR: INFO: DDR counters | ecc_corr=10 ecc_ue=0 rd_lat_ns=73\n[00:00:00.643] DDR: INFO: DDR counters | ecc_corr=10 ecc_ue=0 rd_lat_ns=74\n[00:00:00.678] DDR: INFO: DDR counters | ecc_corr=10 ecc_ue=0 rd_lat_ns=82\n[00:00:00.744] DDR: INFO: DDR counters | ecc_corr=11 ecc_ue=0 rd_lat_ns=84\n[00:00:00.785] DDR: INFO: DDR counters | ecc_corr=12 ecc_ue=0 rd_lat_ns=75\n[00:00:01.024] DDR: INFO: DDR counters | ecc_corr=14 ecc_ue=0 rd_lat_ns=82\n[00:00:01.032] DDR: INFO: DDR counters | ecc_corr=16 ecc_ue=0 rd_lat_ns=73\n[00:00:01.058] DDR: INFO: DDR counters | ecc_corr=16 ecc_ue=0 rd_lat_ns=81\n[00:00:01.061] DDR: INFO: DDR counters | ecc_corr=16 ecc_ue=0 rd_lat_ns=75\n[00:00:01.071] DDR: INFO: DDR counters | ecc_corr=18 ecc_ue=0 rd_lat_ns=79\n[00:00:01.097] DDR: INFO: DDR counters | ecc_corr=20 ecc_ue=0 rd_lat_ns=76\n[00:00:01.205] DDR: INFO: DDR counters | ecc_corr=20 ecc_ue=0 rd_lat_ns=78\n[00:00:01.224] DDR: INFO: DDR counters | ecc_corr=21 ecc_ue=0 rd_lat_ns=81\n[00:00:01.268] DDR: INFO: DDR counters | ecc_corr=22 ecc_ue=0 rd_lat_ns=73\n[00:00",
+          "note": ""
+        },
+        {
+          "step": 21,
+          "tool": "report_finding",
+          "agent": "specialist:DDR",
+          "input": {},
+          "output": "NONE (0.80): The DDR log shows nothing abnormal in this run. There are zero WARN, ERROR or FATAL DDR lines from 0 to 8300 ms. Bring-up was clean: \"DDR init start dram_freq_mhz=3200\" at 0.112s, \"Write leveling PASS\" at 0.206s, \"Read training PASS\" at 0.242s. No training happens again at runtime, and there are no refresh-storm, timing-violation, CDC or DMA-burst lines. Through the 4.40–4.46s window the DDR counters look like the rest of the run. ecc_corr goes 80 (4.402s) → 82 (4.434s) → 83 (4.442s) → 84 (4.457s), and rd_lat_ns stays at 74–82 ns, inside the 72–84 ns range seen for the whole run. The correctab",
+          "note": "From the DDR side I can't see a cause. I found no DDR or memory traffic burst (no training, refresh storm or latency spike) around 4.40–4.45s that would point to a load step from the memory subsystem. I also found no DDR errors after the droop, so DDR does not appear to be a downstream victim. The P"
+        },
+        {
+          "step": 22,
+          "tool": "submit_hypothesis",
+          "agent": "reviewer",
+          "input": {},
+          "output": "RC_REGULATOR_LIMIT (0.78) | chain: VCORE current spike past the 2000 mA limit (4.432 s) -> regulator current-limit foldback -> fast droop 850->611 mV, cause=regulator_limit (4.448 s) -> brown-out threshold of 750 mV crossed (4.457 s) -> watchdog started by the brown-out, never cleared even though the rail recovered (~4.56 s) and firmware kept running -> watchdog timeout after wd_ms=3733 = 8190-4457 (8.190 s) -> SoC reset BROWNOUT_WDOG (8.192 s)",
           "note": ""
         }
       ]
     }
   ],
-  "generated_at": "2026-11-03T23:25:48+00:00"
+  "generated_at": "2026-11-04T00:20:43+00:00"
 }

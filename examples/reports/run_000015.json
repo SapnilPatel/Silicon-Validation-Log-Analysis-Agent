@@ -69,15 +69,16 @@
     {
       "failure_id": "000015:THERMAL_TRIP",
       "cluster_id": 5,
-      "root_cause": "A long power burst (30 W for 921 ms, starting at 1526 ms) used up the cooling headroom. The single DVFS step-down from 1200 to 1000 MHz was too small and came too late, so junction temperature passed the 105C trip point and reached 119C.",
+      "root_cause": "The most likely cause is a sustained workload power burst (30 W for 921 ms, starting at 1.526 s) that was still running when the thermal trip fired at 1.997 s. Firmware cut the clock only once (1200 to 1000 MHz) and that did not lower power. The cause is not confirmed: the sampled temperatures never rose, so the 119 °C trip may come from a local hotspot or a bad trip-sensor reading.",
       "root_cause_id": "RC_WORKLOAD_BURST",
-      "confidence": 0.72,
-      "rationale": "Sequence of events: THERMAL WARN at 95C with DVFS policy (1498 ms), then PMU 'Power burst detected p_w=30 dur_ms=921' (1526 ms), which is the catalogue tell-tale for RC_WORKLOAD_BURST. Next came one DVFS step-down to 1000 MHz (1684 ms). The burst was still running when the trip hit at 1997 ms (119C), followed by the FATAL shutdown at 2010 ms. I found no markers for the other candidates anywhere in the run (filtered 0–2010 ms): no 'fan speed below profile' / target_rpm line, which argues against RC_FAN_PROFILE_BAD, and no sensor-to-ambient delta_c line, which argues against RC_HEATSINK_POOR. Rail telemetry looks healthy (droop_cnt=0, VCORE 830–875 mV), so a regulator limit is unlikely. The closest past incident (run 000020, similarity 0.93) was also resolved as a workload burst. One thing doesn't fit neatly: before the trip, samples stayed between 93 and 97C, then jumped to 119C. That could just be gaps between samples, but a sensor or hotspot problem can't be fully ruled out, so I'm not putting confidence higher.",
+      "confidence": 0.5,
+      "rationale": "Causal chain: 30 W, 921 ms power burst (1.526 s) -> firmware lowers clock one step, 1200 to 1000 MHz (1.684 s), no further step-downs, no fan ramp logged, current unchanged -> heat outruns cooling headroom, probably at a hotspot the sampling sensors don't cover -> trip reports 119 °C against a 105 °C threshold (1.997 s) -> emergency shutdown (2.010 s). Three specialists (THERMAL, PMU, FW) independently point to a workload burst, and the closest past incident (run 000020, similarity 0.93) was resolved as a workload burst. The timing fits: the burst started 471 ms before the trip and was still running when it hit. The signs of the other causes are missing. A poor heatsink would show a sensor-to-ambient delta warning and a slow, steady climb; neither appears. A bad fan profile would show fan speed below target RPM; that doesn't appear either. A regulator limit would show droop counts or current-limit events, but droop_cnt is 0 on every sample and there are no current-limit events. Boot shows no fallback profile being loaded.\n\nI'm holding confidence at about 0.5 because of one big inconsistency. All four sensors stayed flat at 93-97 °C through the burst. The single 119 °C value appears only on the trip line, which names no sensor, and sensor 3 read 97 °C one millisecond later. Core-rail current also stayed flat at about 1.25 A and did not drop after the clock step-down. So the logs don't show the burst actually heating the die. A local hotspot not covered by the sampling sensors, or a false trip, are both still possible (that would be \"OTHER\"). I didn't send anyone back with a follow-up, because the existing logs can't settle this: the trip line names no sensor, there are no register dumps, and there is no fan telemetry. The answer needs new data. (3 of 4 specialists pointed at this cause.)",
       "recommended_actions": [
-        "Re-run the same test with burst power capped (e.g. PL2 limited to ~20-25 W) and confirm no trip with the same cooling setup",
-        "Make the DVFS reaction more aggressive: step down in more stages or bigger steps (e.g. to 800 MHz) when a burst is detected while above 95C, and shorten the policy reaction time",
-        "During the re-run, log fan RPM against target and the die-to-ambient delta to properly rule out fan-profile and heatsink causes",
-        "Sample the thermal sensors faster during bursts to explain the 97C to 119C jump and rule out a sensor or hotspot problem"
+        "Re-run the same workload with per-sensor logging on the trip path, recording which sensor raised the trip, plus a raw ADC dump at the trip, to tell a real hotspot from a false reading.",
+        "Replay the 30 W, about 900 ms burst on a known-good board with good cooling: if it trips again at a similar time, it's a workload burst; if not, look at this unit's sensor or heatsink.",
+        "Turn on fan PWM/RPM and target-RPM logging, and firmware governor logging (thresholds, polling period, step size), to check whether the fan ramped and why firmware stopped after one step.",
+        "Capture package or domain power, not just the core rail, to check 30 W against this part's power budget and to see why the step-down didn't cut current.",
+        "If it is confirmed as a burst, consider stronger throttling: several clock step-downs or a burst power cap, plus a fan escalation tied to burst detection."
       ],
       "supporting_evidence": [
         "[00:00:01.498] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS",
@@ -128,50 +129,244 @@
           "distance": 0.5543044805526733
         }
       ],
-      "source": "llm:claude-opus-5-5:agentic",
+      "source": "llm:claude-opus-5-5:multiagent",
       "trace": [
         {
           "step": 1,
-          "tool": "lookup_catalogue",
+          "tool": "plan_investigation",
+          "agent": "triage",
           "input": {},
-          "output": "Prior for THERMAL_TRIP: Junction temperature exceeded the thermal trip threshold\nTemperature climbed past the DVFS policy and crossed the 105C trip point before throttling could recover it, triggering an emergency shutdown — a cooling-solution or fan-profile shortfall under sustained workload.\n\n- RC_HEATSINK_POOR: Poor heatsink/TIM contact — large die-to-ambient delta\n    tell-tales: sensor-to-ambient delta high, delta_c\n    actions: Re-seat the heatsink and replace the TIM; Measure mounting pressure against the thermal spec\n- RC_FAN_PROFILE_BAD: Fan speed stays below the profile target as temperature rises\n    tell-tales: fan speed below profile, target_rpm\n    actions: Fix the fan curve / PWM mapping in the thermal policy; Verify tachometer feedback and fan power\n- RC_WORKLOAD_BURST: A sustained power burst outruns the cooling headroom\n    tell-tales: power burst detected, p_w=\n    actions: Cap the burst power or lengthen the DVFS step-down reaction; Add thermal headroom to the test's power envelope",
-          "note": ""
+          "output": "THERMAL: Look at the die temperature from about 1.5 s to 2.0 s. How fast did it climb to 119C, against a 105C trip? Was any cooling action logged (fan PWM/RPM ramp, throttle request) before the trip? Does the temperature curve point to a poor heatsink or contact (slow heat removal at steady power) or a bad fan profile (fan ramp missing or late)?; PMU: Describe the 30 W power burst that started at 1.526 s and lasted 921 ms. Is 30 W above the sustained power budget or TDP for this part? Did power drop after the DVFS step-down at 1.684 s? Did any regulator current limits or rail droops occur that would point to a regulator-limit cause rather than just the workload burst?; FW: Why did DVFS only step from 1200 to 1000 MHz at 1.684 s, about 160 ms after the burst started, with no further throttling before the 1.997 s trip? Is the thermal/power governor policy (thresholds, step size, polling interval) too slow or too gentle? Did firmware tell the fan controller to ramp?; BOOT: Which thermal and fan configuration was loaded at boot (fan curve table, throttle thresholds, trip point)? Was a default or fallback profile used instead of the board-specific one?",
+          "note": "Thermal trip at 119C (limit 105C), about 470 ms after a 921 ms, 30 W power burst. One DVFS step-down didn't stop it. The closest past incidents point to a workload burst, a poor heatsink or a bad fan profile. THERMAL checks how heat was removed, PMU checks the size of the burst and the regulators, FW checks whether throttling was too weak or too late, and BOOT checks whether the right fan/thermal profile was loaded. DDR, PCIE and NOC are probably not involved."
         },
         {
           "step": 2,
           "tool": "get_context",
+          "agent": "specialist:THERMAL",
           "input": {
-            "start_ms": 1200,
+            "start_ms": 0,
             "end_ms": 2010,
             "include_info": true,
-            "subsystem": ""
+            "subsystem": "THERMAL"
           },
-          "output": "[00:00:01.209] PMU: INFO: Rail telemetry | rail=VCORE mv=854 i_ma=1389 droop_cnt=0\n[00:00:01.222] DDR: INFO: DDR counters | ecc_corr=17 ecc_ue=0 rd_lat_ns=79\n[00:00:01.237] FW: INFO: Heartbeat | i=100\n[00:00:01.241] THERMAL: INFO: Temp sample | t_c=94 sensor=0\n[00:00:01.256] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=5\n[00:00:01.257] FW: INFO: Loop tick | i=103\n[00:00:01.271] PMU: INFO: Rail telemetry | rail=VCORE mv=839 i_ma=1344 droop_cnt=0\n[00:00:01.282] FW: INFO: Heartbeat | i=105\n[00:00:01.291] DDR: INFO: DDR counters | ecc_corr=19 ecc_ue=0 rd_lat_ns=79\n[00:00:01.296] NOC: INFO: Fabric telemetry | txn_q=high stall_pct=11\n[00:00:01.300] FW: INFO: Heartbeat | i=108\n[00:00:01.301] THERMAL: INFO: Temp sample | t_c=95 sensor=3\n[00:00:01.313] PCIE: INFO: Link stats | gen=3 lanes=x4 retrain=5 aer=0\n[00:00:01.328] PCIE: INFO: Link stats | gen=3 lanes=x4 retrain=6 aer=0\n[00:00:01.334] PCIE: INFO: Link stats | gen=3 lanes=x4 retrain=6 aer=0\n[00:00:01.349] FW: INFO: Heartbeat | i=113\n[00:00:01.351] FW: INFO: Loop tick | i=114\n[00:00:01.355] DDR: INFO: DDR counters | ecc_corr=21 ecc_ue=0 rd_lat_ns=84\n[00:00:01.360] DDR: INFO: DDR counters | ecc_corr=23 ecc_ue=0 rd_lat_ns=83\n[00:00:01.368] FW: INFO: Heartbeat | i=117\n[00:00:01.382] PCIE: INFO: Link stats | gen=3 lanes=x4 retrain=6 aer=0\n[00:00:01.397] DDR: INFO: DDR counters | ecc_corr=24 ecc_ue=0 rd_lat_ns=81\n[00:00:01.406] DDR: INFO: DDR counters | ecc_corr=25 ecc_ue=0 rd_lat_ns=84\n[00:00:01.412] PCIE: INFO: Link stats | gen",
+          "output": "[00:00:00.397] THERMAL: INFO: Temp sample | t_c=95 sensor=0\n[00:00:00.440] THERMAL: INFO: Temp sample | t_c=94 sensor=2\n[00:00:00.452] THERMAL: INFO: Temp sample | t_c=96 sensor=2\n[00:00:00.462] THERMAL: INFO: Temp sample | t_c=95 sensor=0\n[00:00:00.474] THERMAL: INFO: Temp sample | t_c=95 sensor=2\n[00:00:00.593] THERMAL: INFO: Temp sample | t_c=93 sensor=1\n[00:00:00.622] THERMAL: INFO: Temp sample | t_c=93 sensor=1\n[00:00:00.717] THERMAL: INFO: Temp sample | t_c=95 sensor=0\n[00:00:00.725] THERMAL: INFO: Temp sample | t_c=97 sensor=1\n[00:00:00.751] THERMAL: INFO: Temp sample | t_c=95 sensor=2\n[00:00:00.834] THERMAL: INFO: Temp sample | t_c=96 sensor=3\n[00:00:00.889] THERMAL: INFO: Temp sample | t_c=95 sensor=0\n[00:00:00.924] THERMAL: INFO: Temp sample | t_c=96 sensor=0\n[00:00:00.954] THERMAL: INFO: Temp sample | t_c=95 sensor=0\n[00:00:00.956] THERMAL: INFO: Temp sample | t_c=94 sensor=2\n[00:00:01.052] THERMAL: INFO: Temp sample | t_c=96 sensor=3\n[00:00:01.118] THERMAL: INFO: Temp sample | t_c=94 sensor=3\n[00:00:01.241] THERMAL: INFO: Temp sample | t_c=94 sensor=0\n[00:00:01.301] THERMAL: INFO: Temp sample | t_c=95 sensor=3\n[00:00:01.461] THERMAL: INFO: Temp sample | t_c=96 sensor=0\n[00:00:01.498] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS\n[00:00:01.558] THERMAL: INFO: Temp sample | t_c=96 sensor=2\n[00:00:01.578] THERMAL: INFO: Temp sample | t_c=97 sensor=2\n[00:00:01.584] THERMAL: INFO: Temp sample | t_c=95 sensor=1\n[00:00:01.646] THERMAL: INFO: Temp sample | t_c=93 s",
           "note": ""
         },
         {
           "step": 3,
-          "tool": "get_context",
-          "input": {
-            "start_ms": 0,
-            "end_ms": 2010,
-            "include_info": false,
-            "subsystem": ""
-          },
-          "output": "[00:00:01.498] THERMAL: WARN: Temperature high | t_c=95 policy=DVFS\n[00:00:01.526] PMU: WARN: Power burst detected | p_w=30 dur_ms=921\n[00:00:01.684] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000\n[00:00:01.997] THERMAL: ERROR: Thermal trip threshold exceeded | t_c=119 threshold_c=105\n[00:00:02.010] SYSTEM: FATAL: Emergency shutdown | reason=THERMAL_TRIP",
+          "tool": "lookup_catalogue",
+          "agent": "specialist:THERMAL",
+          "input": {},
+          "output": "Root causes the THERMAL specialist can recognise:\n- RC_HEATSINK_POOR: Poor heatsink/TIM contact — large die-to-ambient delta  (tell-tales: sensor-to-ambient delta high, delta_c)\n- RC_FAN_PROFILE_BAD: Fan speed stays below the profile target as temperature rises  (tell-tales: fan speed below profile, target_rpm)\n- RC_WORKLOAD_BURST: A sustained power burst outruns the cooling headroom  (tell-tales: power burst detected, p_w=)",
           "note": ""
         },
         {
           "step": 4,
           "tool": "read_block",
+          "agent": "specialist:THERMAL",
           "input": {
             "ts_ms": 1997
           },
           "output": "No multi-line blocks in this run.",
           "note": ""
+        },
+        {
+          "step": 5,
+          "tool": "search_incidents",
+          "agent": "specialist:THERMAL",
+          "input": {
+            "query": "Thermal trip threshold exceeded t_c=119 threshold_c=105 power burst detected",
+            "top_k": 5
+          },
+          "output": "- run 000020 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.7415\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power \n- run 000018 | THERMAL_TRIP | root_cause=RC_HEATSINK_POOR | similarity=0.7026\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down\n- run 000001 | THERMAL_TRIP | root_cause=RC_FAN_PROFILE_BAD | similarity=0.6419\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step\n- run 000001 | PCIE_TIMEOUT | root_cause=RC_PCIE_REFCLK_GATING | similarity=0.3796\n    PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fa\n- run 000010 | NOC_TIMEOUT | root_cause=RC_DMA_BURST_OVERFLOW | similarity=0.317\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow",
+          "note": ""
+        },
+        {
+          "step": 6,
+          "tool": "report_finding",
+          "agent": "specialist:THERMAL",
+          "input": {},
+          "output": "RC_WORKLOAD_BURST (0.55): The die temperature did not climb steadily. From 0.397 s to 1.968 s, every THERMAL sample on all 4 sensors stayed between 93 and 97C with no upward trend. In the 1.5–2.0 s window the readings were 96 (1.558), 97 (1.578), 95, 93, 93, 96 (1.707), 94, 93, 97 (1.898), 94, 94, 96 (1.945) and 94C (1.968 s, sensor 0). Then at 1.997 s the trip line reported t_c=119 against threshold_c=105. That is a jump of 25C in 29 ms after about 1.5 s of flat readings. One millisecond later, at 1.998 s, sensor 3 read 97C. The only thermal action logged before the trip was 'Temperature high t_c=95 policy=DVFS' at 1.",
+          "note": "The signs of both a poor heatsink and a bad fan profile are absent. A poor heatsink would show a delta_c warning and a slow, steady climb. A bad fan profile would show fan speed below target_rpm. Neither appears. The trip came shortly after the 30 W, 921 ms power burst at 1.526 s that the triage sum"
+        },
+        {
+          "step": 7,
+          "tool": "get_context",
+          "agent": "specialist:PMU",
+          "input": {
+            "start_ms": 1000,
+            "end_ms": 2010,
+            "include_info": true,
+            "subsystem": "PMU"
+          },
+          "output": "[00:00:01.028] PMU: INFO: Rail telemetry | rail=VCORE mv=835 i_ma=1297 droop_cnt=0\n[00:00:01.040] PMU: INFO: Rail telemetry | rail=VCORE mv=862 i_ma=1287 droop_cnt=0\n[00:00:01.092] PMU: INFO: Rail telemetry | rail=VCORE mv=829 i_ma=1132 droop_cnt=0\n[00:00:01.131] PMU: INFO: Rail telemetry | rail=VCORE mv=862 i_ma=1378 droop_cnt=0\n[00:00:01.179] PMU: INFO: Rail telemetry | rail=VCORE mv=844 i_ma=1174 droop_cnt=0\n[00:00:01.209] PMU: INFO: Rail telemetry | rail=VCORE mv=854 i_ma=1389 droop_cnt=0\n[00:00:01.271] PMU: INFO: Rail telemetry | rail=VCORE mv=839 i_ma=1344 droop_cnt=0\n[00:00:01.443] PMU: INFO: Rail telemetry | rail=VCORE mv=833 i_ma=1221 droop_cnt=0\n[00:00:01.475] PMU: INFO: Rail telemetry | rail=VCORE mv=875 i_ma=1235 droop_cnt=0\n[00:00:01.508] PMU: INFO: Rail telemetry | rail=VCORE mv=860 i_ma=1272 droop_cnt=0\n[00:00:01.526] PMU: WARN: Power burst detected | p_w=30 dur_ms=921\n[00:00:01.548] PMU: INFO: Rail telemetry | rail=VCORE mv=861 i_ma=1324 droop_cnt=0\n[00:00:01.613] PMU: INFO: Rail telemetry | rail=VCORE mv=834 i_ma=1048 droop_cnt=0\n[00:00:01.634] PMU: INFO: Rail telemetry | rail=VCORE mv=865 i_ma=1399 droop_cnt=0\n[00:00:01.722] PMU: INFO: Rail telemetry | rail=VCORE mv=830 i_ma=1311 droop_cnt=0\n[00:00:01.782] PMU: INFO: Rail telemetry | rail=VCORE mv=833 i_ma=1017 droop_cnt=0\n[00:00:01.791] PMU: INFO: Rail telemetry | rail=VCORE mv=834 i_ma=1254 droop_cnt=0\n[00:00:01.819] PMU: INFO: Rail telemetry | rail=VCORE mv=849 i_ma=1313 droop_cnt=0\n[00:00:01.832] PMU: IN",
+          "note": ""
+        },
+        {
+          "step": 8,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:PMU",
+          "input": {},
+          "output": "Root causes the PMU specialist can recognise:\n- RC_LOAD_STEP_SPIKE: A fast di/dt load step exceeds the regulator slew capability  (tell-tales: load step detected, cause=load_step, di_dt)\n- RC_INSUFFICIENT_DECOUPLING: Insufficient decoupling causes undershoot/ringing after a transient  (tell-tales: rail ringing after transient, undershoot_mv)\n- RC_REGULATOR_LIMIT: Regulator reaches its current limit and folds back  (tell-tales: regulator current limit hit, cause=regulator_limit, i_limit)",
+          "note": ""
+        },
+        {
+          "step": 9,
+          "tool": "get_context",
+          "agent": "specialist:PMU",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 1000,
+            "include_info": false,
+            "subsystem": "PMU"
+          },
+          "output": "No matching lines between 0 and 1000 ms.",
+          "note": ""
+        },
+        {
+          "step": 10,
+          "tool": "read_block",
+          "agent": "specialist:PMU",
+          "input": {
+            "ts_ms": 1526
+          },
+          "output": "No multi-line blocks in this run.",
+          "note": ""
+        },
+        {
+          "step": 11,
+          "tool": "report_finding",
+          "agent": "specialist:PMU",
+          "input": {},
+          "output": "RC_WORKLOAD_BURST (0.60): There is one PMU WARN in this run: \"Power burst detected | p_w=30 dur_ms=921\" at 1.526 s. A 921 ms burst starting at 1.526 s would run until about 2.447 s, so it was still going when the thermal trip hit at 1.997 s and the shutdown at 2.010 s. The PMU logs contain no TDP or sustained-budget figure, no PL1/PL2 limit, and no budget-exceeded event, so from my logs I cannot say whether 30 W is above this part's TDP. No register dumps exist for this run. VCORE rail telemetry runs every 10-90 ms across 1.0-1.974 s. Voltage stayed at 829-875 mV, current at 1017-1399 mA, and droop_cnt=0 on every sampl",
+          "note": "From the PMU side, this looks like a sustained workload power burst (30 W for 921 ms, overlapping the trip) heating the die, not a regulator problem. VCORE stays within its usual 829-875 mV and 1.0-1.4 A band with droop_cnt=0, and no current-limit or foldback events appear, which argues against RC_R"
+        },
+        {
+          "step": 12,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 1000,
+            "end_ms": 2010,
+            "include_info": true,
+            "subsystem": "FW"
+          },
+          "output": "[00:00:01.023] FW: INFO: Checkpoint | i=74\n[00:00:01.038] FW: INFO: Heartbeat | i=76\n[00:00:01.066] FW: INFO: Checkpoint | i=80\n[00:00:01.121] FW: INFO: Checkpoint | i=86\n[00:00:01.147] FW: INFO: Loop tick | i=90\n[00:00:01.237] FW: INFO: Heartbeat | i=100\n[00:00:01.257] FW: INFO: Loop tick | i=103\n[00:00:01.282] FW: INFO: Heartbeat | i=105\n[00:00:01.300] FW: INFO: Heartbeat | i=108\n[00:00:01.349] FW: INFO: Heartbeat | i=113\n[00:00:01.351] FW: INFO: Loop tick | i=114\n[00:00:01.368] FW: INFO: Heartbeat | i=117\n[00:00:01.454] FW: INFO: Heartbeat | i=126\n[00:00:01.471] FW: INFO: Loop tick | i=128\n[00:00:01.497] FW: INFO: Heartbeat | i=134\n[00:00:01.502] FW: INFO: Loop tick | i=135\n[00:00:01.536] FW: INFO: Heartbeat | i=139\n[00:00:01.565] FW: INFO: Heartbeat | i=142\n[00:00:01.628] FW: INFO: Checkpoint | i=148\n[00:00:01.659] FW: INFO: Checkpoint | i=151\n[00:00:01.684] FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000\n[00:00:01.806] FW: INFO: Loop tick | i=166\n[00:00:01.872] FW: INFO: Heartbeat | i=176\n[00:00:01.873] FW: INFO: Loop tick | i=177\n[00:00:01.887] FW: INFO: Loop tick | i=178\n[00:00:01.897] FW: INFO: Heartbeat | i=179",
+          "note": ""
+        },
+        {
+          "step": 13,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:FW",
+          "input": {},
+          "output": "Root causes the FW specialist can recognise:\n- RC_FW_RACE_CONDITION: Race between service threads on a shared lock  (tell-tales: mutex contention timeout, lock=)\n- RC_FW_NULL_DEREF: Null-pointer dereference in a service handler  (tell-tales: fault address near null, dfar=0x0000)\n- RC_FW_STACK_OVERFLOW: Task stack overflow corrupts the return frame  (tell-tales: stack watermark exceeded, used_pct)",
+          "note": ""
+        },
+        {
+          "step": 14,
+          "tool": "read_block",
+          "agent": "specialist:FW",
+          "input": {
+            "ts_ms": 1684
+          },
+          "output": "No multi-line blocks in this run.",
+          "note": ""
+        },
+        {
+          "step": 15,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 1000,
+            "include_info": false,
+            "subsystem": "FW"
+          },
+          "output": "No matching lines between 0 and 1000 ms.",
+          "note": ""
+        },
+        {
+          "step": 16,
+          "tool": "search_incidents",
+          "agent": "specialist:FW",
+          "input": {
+            "query": "FW: WARN: DVFS step-down | clk_mhz=1200 next_clk_mhz=1000 thermal trip",
+            "top_k": 5
+          },
+          "output": "- run 000018 | THERMAL_TRIP | root_cause=RC_HEATSINK_POOR | similarity=0.6851\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down\n- run 000020 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.6739\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power \n- run 000001 | THERMAL_TRIP | root_cause=RC_FAN_PROFILE_BAD | similarity=0.6457\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step\n- run 000023 | PMU_DROOP | root_cause=RC_REGULATOR_LIMIT | similarity=0.3942\n    PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event\n- run 000001 | PCIE_TIMEOUT | root_cause=RC_PCIE_REFCLK_GATING | similarity=0.3871\n    PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fa",
+          "note": ""
+        },
+        {
+          "step": 17,
+          "tool": "report_finding",
+          "agent": "specialist:FW",
+          "input": {},
+          "output": "RC_WORKLOAD_BURST (0.45): FW logs from 0 to 2010 ms show a healthy firmware: steady Heartbeat, Loop tick and Checkpoint lines, with the counter going up without gaps (i=74 at 1.023 s, i=151 at 1.659 s, i=166 at 1.806 s, i=179 at 1.897 s). There are no errors, watchdog events, mutex/lock timeouts, null-pointer guards, stack watermark warnings or retries, and read_block finds no register dump or stack trace in this run. There are no FW lines at all before 1.0 s (even with INFO included). In the error window FW made exactly one governor action: 'DVFS step-down clk_mhz=1200 next_clk_mhz=1000' at 1.684 s. That is 158 ms aft",
+          "note": "From the FW side, the firmware did not crash or hang, so none of the FW catalogue causes fit (race condition, null dereference, stack overflow). The governor's response was slow and gentle: one 1200→1000 MHz step about 158 ms into a 921 ms, 30 W burst, no further step-down while the chip climbed to "
+        },
+        {
+          "step": 18,
+          "tool": "get_context",
+          "agent": "specialist:BOOT",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 2010,
+            "include_info": true,
+            "subsystem": "BOOT"
+          },
+          "output": "[00:00:00.000] BOOT: INFO: Power-on reset detected",
+          "note": ""
+        },
+        {
+          "step": 19,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:BOOT",
+          "input": {},
+          "output": "No catalogue entries owned by the BOOT specialist.",
+          "note": ""
+        },
+        {
+          "step": 20,
+          "tool": "get_context",
+          "agent": "specialist:BOOT",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 5000,
+            "include_info": true,
+            "subsystem": "BOOT"
+          },
+          "output": "[00:00:00.000] BOOT: INFO: Power-on reset detected",
+          "note": ""
+        },
+        {
+          "step": 21,
+          "tool": "search_incidents",
+          "agent": "specialist:BOOT",
+          "input": {
+            "query": "BOOT fan profile default fallback thermal table loaded",
+            "top_k": 5
+          },
+          "output": "- run 000001 | THERMAL_TRIP | root_cause=RC_FAN_PROFILE_BAD | similarity=0.4309\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fan speed below profile ; FW: DVFS step\n- run 000020 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.3958\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power \n- run 000018 | THERMAL_TRIP | root_cause=RC_HEATSINK_POOR | similarity=0.3829\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; THERMAL: Sensor-to-ambient delta high ; FW: DVFS step-down\n- run 000001 | PCIE_TIMEOUT | root_cause=RC_PCIE_REFCLK_GATING | similarity=0.2957\n    PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fa\n- run 000023 | PMU_DROOP | root_cause=RC_REGULATOR_LIMIT | similarity=0.1988\n    PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event",
+          "note": ""
+        },
+        {
+          "step": 22,
+          "tool": "report_finding",
+          "agent": "specialist:BOOT",
+          "input": {},
+          "output": "NONE (0.30): The BOOT log for run 000015 has exactly one line across the whole window (0–5000 ms, INFO included): \"[00:00:00.000] BOOT: INFO: Power-on reset detected\". There is no BOOT record of a fan curve table, throttle thresholds, trip point, or of a default/fallback profile being selected vs a board-specific one. No BOOT warnings or errors before the 1997 ms trip. The only trip threshold visible anywhere is threshold_c=105 in the THERMAL error line (t_c=119), which is not a BOOT line. No BOOT catalogue entries exist for this failure type.",
+          "note": "From BOOT's point of view, no evidence of a misconfigured or fallback thermal/fan profile: boot completed power-on reset with no anomalies, and no profile-load messages were logged at all, so the question cannot be confirmed or refuted from BOOT logs. Absence of a 'fallback profile' warning weakly a"
+        },
+        {
+          "step": 23,
+          "tool": "submit_hypothesis",
+          "agent": "reviewer",
+          "input": {},
+          "output": "RC_WORKLOAD_BURST (0.50) | chain: 30 W, 921 ms power burst (1.526 s) -> firmware lowers clock one step, 1200 to 1000 MHz (1.684 s), no further step-downs, no fan ramp logged, current unchanged -> heat outruns cooling headroom, probably at a hotspot the sampling sensors don't cover -> trip reports 119 °C against a 105 °C threshold (1.997 s) -> emergency shutdown (2.010 s)",
+          "note": ""
         }
       ]
     }
   ],
-  "generated_at": "2026-11-03T23:23:44+00:00"
+  "generated_at": "2026-11-04T00:14:59+00:00"
 }

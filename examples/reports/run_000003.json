@@ -69,15 +69,16 @@
     {
       "failure_id": "000003:NOC_TIMEOUT",
       "cluster_id": 2,
-      "root_cause": "QoS credits ran out on the NOC0 fabric during a congestion episode on the CPU/PCIe/DDR routes, and the stalled traffic most likely led to the DMA→MMIO transaction 0xB6BA timing out (rc=-62).",
-      "root_cause_id": "RC_NOC_QOS_STARVATION",
-      "confidence": 0.5,
-      "rationale": "The only catalogue tell-tale anywhere in the run is the QoS-starvation one: at 3.201s, 'QoS credit starvation | initiator=CPU0 credits=0'. It sits inside a congestion episode from 3.153s to 3.531s (txn_q=high, stall_pct 24-34%, on the CPU<->PCIE and PCIE<->DDR routes). There are no deadlock markers ('dependency cycle'/'cycle') and no DMA burst-overflow markers ('burst_len'). The two closest past incidents (run 21, deadlock; run 10, burst overflow) don't match this run's evidence. Three things lower my confidence. (1) The starved initiator was CPU0, but the request that timed out came from DMA. (2) By about 3.83s the queues had drained (txn_q=low, stall 2-6%), so the fabric wasn't congested when the timeout hit at 3.927s. A request stuck since the congestion window, or a slow MMIO target, could explain that. (3) The NOC0 register dump is raw hex with no decode. The PCIe retrain counter went from 34 to 35 at 3.945s, but that was after the timeout, so it's probably a side effect. An unresponsive MMIO/PCIe target (OTHER) is the main alternative.",
+      "root_cause": "Not determined from the logs. The best-supported lead is that the MMIO target (or its slave port) never answered DMA transaction 0xB6BA, while the fabric was nearly idle. That is not a fabric-wide deadlock, a DMA burst overflow or a power/clock event. The QoS starvation seen earlier (CPU0, 3201 ms) is a weaker alternative: it hit a different initiator and had cleared 726 ms before the timeout.",
+      "root_cause_id": null,
+      "confidence": 0.3,
+      "rationale": "Causal chain: Congestion burst at 3153-3531 ms in the CPU<->PCIE and PCIE<->DDR regions, with CPU0 QoS credit starvation at 3201 ms -> congestion clears (txn_q low/med, stall_pct 2-11 from 3560 ms) -> DMA issues txn 0xB6BA to MMIO -> MMIO target/port never responds (suspected; not confirmed) -> NOC timeout rc=-62 (ETIME) at 3927 ms -> NOC0 register snapshot at 3978 ms -> SYSTEM FATAL interconnect failure at 3995 ms. All four specialists agree on what is missing.\n- NOC logs have none of the catalogued deadlock or burst markers: no 'Dependency cycle suspected', no 'DMA burst overflow', no burst_len line. The two most similar past runs (000021, 000010) both had these markers.\n- PMU shows no droop, power gating, clock gating or DVFS event around the timeout.\n- FW kept ticking 47 ms after the timeout and logged no WARN or ERROR at any point in the run.\n- BOOT shows no late re-init or reset.\n- The only catalogued marker in the run is QoS starvation, and it doesn't fit: it was CPU0, not DMA, it hit different regions (not DMA->MMIO), and it was over long before the timeout. At the moment of the timeout the fabric was nearly idle (txn_q=low, stall_pct=2). That points to a target-side non-response rather than congestion inside the fabric.\n- The deciding evidence is the NOC0 register snapshot, which nobody can decode without its field map. One more question to a specialist won't settle this; it needs the register map and target-side visibility. So I'm submitting OTHER with low confidence, and RC_NOC_QOS_STARVATION is the fallback if the decoded registers show the DMA port out of credits. (0 of 4 specialists pointed at this cause.)",
       "recommended_actions": [
-        "Decode the NOC0 register dump (0x60000A86-0x60000AD2) to get the per-initiator credit counters and where txn 0xB6BA was waiting (in the fabric or at the MMIO target)",
-        "Re-run with QoS weights/credits rebalanced and age-based arbitration enabled on the CPU<->PCIE and PCIE<->DDR links; check whether both the starvation warnings and the timeout go away",
-        "Rule out an unresponsive MMIO target: trace the target of txn 0xB6BA and check its PCIe link state and AER/retrain history around 3.9s",
-        "Add per-initiator credit telemetry (DMA as well as CPU0) so the starved initiator can be matched to the one that timed out"
+        "Decode the 20-word NOC0 snapshot (0x60000A86-0x60000AD2) using the NOC0 register map: find the timed-out port, outstanding transaction counts, per-port credit counters (especially the DMA initiator's QoS credits) and which router stalled first.",
+        "Find the MMIO target that txn 0xB6BA (dst=MMIO) was addressed to and check whether it was alive: read its status/clock/reset registers after the failure and check its slave-port response logic for a missing or dropped completion.",
+        "Turn on DMA descriptor/burst logging in FW (burst size, queue depth, target address, retries) and rerun, to rule DMA burst overflow in or out directly.",
+        "Rerun with the CPU<->PCIE/PCIE<->DDR congestion workload removed, or with the QoS weights changed. If the timeout persists, QoS starvation is ruled out; if it disappears, revisit the QoS-starvation hypothesis.",
+        "Add BOOT init-completion milestones for MMIO target init and NOC0 routing/QoS setup, so incomplete initialization can be ruled out in later runs."
       ],
       "supporting_evidence": [
         "[00:00:03.153] NOC: WARN: Fabric congestion | txn_q=high stall_pct=24 region=CPU<->PCIE",
@@ -129,30 +130,20 @@
           "distance": 0.6281557679176331
         }
       ],
-      "source": "llm:claude-opus-5-5:agentic",
+      "source": "llm:claude-opus-5-5:multiagent",
       "trace": [
         {
           "step": 1,
-          "tool": "lookup_catalogue",
+          "tool": "plan_investigation",
+          "agent": "triage",
           "input": {},
-          "output": "Prior for NOC_TIMEOUT: Interconnect transaction timed out under fabric congestion\nSustained high transaction-queue occupancy and stalls precede a transaction timeout and interconnect failure, suggesting QoS starvation or a potential deadlock on a congested route.\n\n- RC_NOC_QOS_STARVATION: A low-priority initiator is starved of QoS credits\n    tell-tales: qos credit starvation, credits=0\n    actions: Rebalance QoS weights / credits for the starved initiator; Enable age-based arbitration on the congested link\n- RC_NOC_DEADLOCK: Dependency cycle across fabric routes causes a deadlock\n    tell-tales: dependency cycle suspected, cycle\n    actions: Inspect the route table for cyclic dependencies; Enable deadlock-recovery timeouts on the affected ring\n- RC_DMA_BURST_OVERFLOW: DMA burst length overflows the fabric buffers\n    tell-tales: dma burst overflow, burst_len\n    actions: Reduce the DMA burst length or add outstanding-transaction limits; Verify buffer depth on the DMA->DDR path",
-          "note": ""
+          "output": "NOC: For txn_id=0xB6BA (DMA->MMIO, rc=-62) at 3927 ms, decode the NOC0 error register snapshot: is this a deadlock/credit starvation (cf. run 000021 RC_NOC_DEADLOCK) or ingress overflow from a DMA burst (cf. run 000010 RC_DMA_BURST_OVERFLOW)? Report outstanding transaction counts, credit/backpressure state, and which port/router stalled first.; FW: What did firmware/DMA driver program in the ~500 ms before 3927 ms: DMA descriptor burst sizes, queue depth, MMIO target addresses, and any retries? Did FW issue an oversized or back-to-back DMA burst, or touch an MMIO region whose target block was gated or in reset?; PMU: Around 3800-3995 ms, were there any power-domain transitions, clock gating, DVFS changes, or voltage droops affecting the NoC fabric or the MMIO target block? A target being powered down or clock-gated would leave the DMA->MMIO transaction unanswered.; BOOT: Did boot/init sequencing finish completely before 3927 ms? Check whether the MMIO target and NOC0 routing/QoS configuration were fully initialized and out of reset, and look for any late-stage init or re-init events that overlap the DMA traffic.",
+          "note": "This is a NOC_TIMEOUT on a DMA->MMIO transaction, followed by a fatal interconnect error. The two closest past incidents were also NOC timeouts: one a NoC deadlock (sim 0.907) and one a DMA burst overflow (sim 0.866). So NOC goes first to decode the register dump and tell those two apart. FW is next because it sets up the DMA bursts, which covers the overflow case. PMU is there to check whether the MMIO target was power- or clock-gated, a common upstream cause of unanswered transactions. BOOT was the second most active subsystem, so it may point to unfinished init or reset of the target or fabric. DDR, PCIE and THERMAL are not part of the DMA->MMIO path and didn't stand out, so they are left out."
         },
         {
           "step": 2,
-          "tool": "get_context",
-          "input": {
-            "start_ms": 3700,
-            "end_ms": 3995,
-            "include_info": true,
-            "subsystem": ""
-          },
-          "output": "[00:00:03.701] PMU: INFO: Rail telemetry | rail=VCORE mv=815 i_ma=371 droop_cnt=0\n[00:00:03.705] THERMAL: INFO: Temp sample | t_c=77 sensor=1\n[00:00:03.716] DDR: INFO: DDR counters | ecc_corr=49 ecc_ue=0 rd_lat_ns=79\n[00:00:03.730] FW: INFO: Heartbeat | i=405\n[00:00:03.731] DDR: INFO: DDR counters | ecc_corr=51 ecc_ue=0 rd_lat_ns=77\n[00:00:03.732] PCIE: INFO: Link stats | gen=3 lanes=x4 retrain=34 aer=0\n[00:00:03.745] DDR: INFO: DDR counters | ecc_corr=52 ecc_ue=0 rd_lat_ns=83\n[00:00:03.758] PCIE: INFO: Link stats | gen=3 lanes=x4 retrain=34 aer=0\n[00:00:03.760] DDR: INFO: DDR counters | ecc_corr=53 ecc_ue=0 rd_lat_ns=79\n[00:00:03.767] THERMAL: INFO: Temp sample | t_c=75 sensor=0\n[00:00:03.779] PMU: INFO: Rail telemetry | rail=VCORE mv=818 i_ma=409 droop_cnt=0\n[00:00:03.783] PMU: INFO: Rail telemetry | rail=VCORE mv=844 i_ma=670 droop_cnt=0\n[00:00:03.785] PCIE: INFO: Link stats | gen=3 lanes=x4 retrain=34 aer=0\n[00:00:03.791] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=11\n[00:00:03.802] FW: INFO: Checkpoint | i=416\n[00:00:03.805] THERMAL: INFO: Temp sample | t_c=74 sensor=0\n[00:00:03.820] THERMAL: INFO: Temp sample | t_c=77 sensor=1\n[00:00:03.830] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00:00:03.840] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=6\n[00:00:03.846] THERMAL: INFO: Temp sample | t_c=73 sensor=1\n[00:00:03.860] PMU: INFO: Rail telemetry | rail=VCORE mv=800 i_ma=444 droop_cnt=0\n[00:00:03.875] DDR: INFO: DDR counters | ecc_corr=55 ecc_ue=0 rd_la",
-          "note": ""
-        },
-        {
-          "step": 3,
           "tool": "read_block",
+          "agent": "specialist:NOC",
           "input": {
             "ts_ms": 3978
           },
@@ -160,19 +151,228 @@
           "note": ""
         },
         {
-          "step": 4,
+          "step": 3,
           "tool": "get_context",
+          "agent": "specialist:NOC",
+          "input": {
+            "start_ms": 3000,
+            "end_ms": 3995,
+            "include_info": true,
+            "subsystem": "NOC"
+          },
+          "output": "[00:00:03.018] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=6\n[00:00:03.033] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=13\n[00:00:03.056] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=1\n[00:00:03.079] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=2\n[00:00:03.088] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=11\n[00:00:03.101] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00:00:03.153] NOC: WARN: Fabric congestion | txn_q=high stall_pct=24 region=CPU<->PCIE\n[00:00:03.201] NOC: WARN: QoS credit starvation | initiator=CPU0 credits=0\n[00:00:03.261] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=15\n[00:00:03.287] NOC: WARN: Fabric congestion | txn_q=high stall_pct=33 region=PCIE<->DDR\n[00:00:03.340] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=11\n[00:00:03.397] NOC: WARN: Fabric congestion | txn_q=high stall_pct=33 region=PCIE<->DDR\n[00:00:03.460] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=15\n[00:00:03.531] NOC: WARN: Fabric congestion | txn_q=high stall_pct=34 region=CPU<->PCIE\n[00:00:03.560] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=9\n[00:00:03.791] NOC: INFO: Fabric telemetry | txn_q=med stall_pct=11\n[00:00:03.830] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=3\n[00:00:03.840] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=6\n[00:00:03.889] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=2\n[00:00:03.925] NOC: INFO: Fabric telemetry | txn_q=low stall_pct=5\n[00:00:03.927] NOC: INFO: Fabric telemetry | txn_q=low stall_p",
+          "note": ""
+        },
+        {
+          "step": 4,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:NOC",
+          "input": {},
+          "output": "Root causes the NOC specialist can recognise:\n- RC_NOC_QOS_STARVATION: A low-priority initiator is starved of QoS credits  (tell-tales: qos credit starvation, credits=0)\n- RC_NOC_DEADLOCK: Dependency cycle across fabric routes causes a deadlock  (tell-tales: dependency cycle suspected, cycle)\n- RC_DMA_BURST_OVERFLOW: DMA burst length overflows the fabric buffers  (tell-tales: dma burst overflow, burst_len)",
+          "note": ""
+        },
+        {
+          "step": 5,
+          "tool": "get_context",
+          "agent": "specialist:NOC",
           "input": {
             "start_ms": 0,
-            "end_ms": 3927,
+            "end_ms": 3000,
+            "include_info": false,
+            "subsystem": "NOC"
+          },
+          "output": "No matching lines between 0 and 3000 ms.",
+          "note": ""
+        },
+        {
+          "step": 6,
+          "tool": "search_incidents",
+          "agent": "specialist:NOC",
+          "input": {
+            "query": "QoS credit starvation initiator=CPU0 credits=0 Transaction timeout src=DMA dst=MMIO",
+            "top_k": 5
+          },
+          "output": "- run 000010 | NOC_TIMEOUT | root_cause=RC_DMA_BURST_OVERFLOW | similarity=0.3952\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow\n- run 000020 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.3656\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power \n- run 000023 | PMU_DROOP | root_cause=RC_REGULATOR_LIMIT | similarity=0.3565\n    PMU_DROOP | PMU: Brown-out threshold crossed ; FW: Watchdog timeout ; SYSTEM: SoC reset asserted ; PMU: Regulator current limit hit ; PMU: Fast droop event\n- run 000015 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.3103\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; THERMAL: Temperature high ; PMU: Power burst detected ; FW: DVFS step-down\n- run 000021 | NOC_TIMEOUT | root_cause=RC_NOC_DEADLOCK | similarity=0.3019\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Dependency cycle suspected ; NOC: Fabric <*>",
+          "note": ""
+        },
+        {
+          "step": 7,
+          "tool": "report_finding",
+          "agent": "specialist:NOC",
+          "input": {},
+          "output": "RC_NOC_QOS_STARVATION (0.30): I couldn't decode the NOC0 snapshot at 3978 ms. It is 20 raw 32-bit words (0x60000A86 to 0x60000AD2, e.g. A6F7AB8D, 3810F21E, ...) and I have no field map for them. So I can't report outstanding transaction counts, per-port credit counters or which router stalled first from the registers. All I have is the NOC log text, and it supports neither hypothesis. (1) No deadlock markers: there is no 'Dependency cycle suspected' line anywhere from 0 to 3995 ms. Run 000021 (RC_NOC_DEADLOCK) had that line. (2) No DMA-burst markers: there is no 'DMA burst overflow' and no burst_len line. Run 000010 (RC_DM",
+          "note": "It is neither of the two options asked about. The logs show no dependency-cycle marker and no burst-overflow or burst_len marker, and the fabric was not backed up when the timeout hit (txn_q=low, stall_pct=2). The only catalogued tell-tale is QoS credit starvation of CPU0 (credits=0) at 3201 ms duri"
+        },
+        {
+          "step": 8,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 3400,
+            "end_ms": 3995,
+            "include_info": true,
+            "subsystem": "FW"
+          },
+          "output": "[00:00:03.413] FW: INFO: Heartbeat | i=367\n[00:00:03.440] FW: INFO: Checkpoint | i=369\n[00:00:03.477] FW: INFO: Loop tick | i=374\n[00:00:03.480] FW: INFO: Loop tick | i=376\n[00:00:03.548] FW: INFO: Checkpoint | i=385\n[00:00:03.568] FW: INFO: Loop tick | i=388\n[00:00:03.580] FW: INFO: Heartbeat | i=389\n[00:00:03.624] FW: INFO: Checkpoint | i=393\n[00:00:03.642] FW: INFO: Checkpoint | i=395\n[00:00:03.730] FW: INFO: Heartbeat | i=405\n[00:00:03.802] FW: INFO: Checkpoint | i=416\n[00:00:03.900] FW: INFO: Loop tick | i=425\n[00:00:03.974] FW: INFO: Loop tick | i=439",
+          "note": ""
+        },
+        {
+          "step": 9,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:FW",
+          "input": {},
+          "output": "Root causes the FW specialist can recognise:\n- RC_FW_RACE_CONDITION: Race between service threads on a shared lock  (tell-tales: mutex contention timeout, lock=)\n- RC_FW_NULL_DEREF: Null-pointer dereference in a service handler  (tell-tales: fault address near null, dfar=0x0000)\n- RC_FW_STACK_OVERFLOW: Task stack overflow corrupts the return frame  (tell-tales: stack watermark exceeded, used_pct)",
+          "note": ""
+        },
+        {
+          "step": 10,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 3400,
+            "end_ms": 3995,
             "include_info": false,
             "subsystem": ""
           },
-          "output": "[00:00:03.153] NOC: WARN: Fabric congestion | txn_q=high stall_pct=24 region=CPU<->PCIE\n[00:00:03.201] NOC: WARN: QoS credit starvation | initiator=CPU0 credits=0\n[00:00:03.287] NOC: WARN: Fabric congestion | txn_q=high stall_pct=33 region=PCIE<->DDR\n[00:00:03.397] NOC: WARN: Fabric congestion | txn_q=high stall_pct=33 region=PCIE<->DDR\n[00:00:03.531] NOC: WARN: Fabric congestion | txn_q=high stall_pct=34 region=CPU<->PCIE\n[00:00:03.927] NOC: ERROR: Transaction timeout | txn_id=0xB6BA src=DMA dst=MMIO rc=-62",
+          "output": "No matching lines between 3400 and 3995 ms.",
+          "note": ""
+        },
+        {
+          "step": 11,
+          "tool": "read_block",
+          "agent": "specialist:FW",
+          "input": {
+            "ts_ms": 3978
+          },
+          "output": "No multi-line blocks in this run.",
+          "note": ""
+        },
+        {
+          "step": 12,
+          "tool": "get_context",
+          "agent": "specialist:FW",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 3995,
+            "include_info": false,
+            "subsystem": "FW"
+          },
+          "output": "No matching lines between 0 and 3995 ms.",
+          "note": ""
+        },
+        {
+          "step": 13,
+          "tool": "report_finding",
+          "agent": "specialist:FW",
+          "input": {},
+          "output": "NONE (0.60): FW logs from 3400–3995 ms contain only routine INFO telemetry: Heartbeat (i=367 at 3413, i=389 at 3580, i=405 at 3730), Checkpoint (i=369…416), and Loop tick (i=374…439, last at 3974 ms, 47 ms after the 3927 ms NOC timeout). The ticks keep coming at their normal rate, with no stall or gap around the error. Across the whole run (0–3995 ms) there are zero FW WARN/ERROR/FATAL lines. There are no DMA descriptor, burst-size, queue-depth, MMIO-address or retry log lines anywhere in the FW stream, so I cannot confirm or rule out an oversized or back-to-back burst from FW logs. read_block returned no ",
+          "note": "From the FW side I see no fault. Firmware stayed alive and kept ticking through the timeout, and logged no lock contention, null dereference or stack overflow. FW also does not log any DMA programming (burst size, queue depth, MMIO target, retries) or power-gating/reset activity, so I can neither su"
+        },
+        {
+          "step": 14,
+          "tool": "get_context",
+          "agent": "specialist:PMU",
+          "input": {
+            "start_ms": 3700,
+            "end_ms": 3995,
+            "include_info": true,
+            "subsystem": "PMU"
+          },
+          "output": "[00:00:03.701] PMU: INFO: Rail telemetry | rail=VCORE mv=815 i_ma=371 droop_cnt=0\n[00:00:03.779] PMU: INFO: Rail telemetry | rail=VCORE mv=818 i_ma=409 droop_cnt=0\n[00:00:03.783] PMU: INFO: Rail telemetry | rail=VCORE mv=844 i_ma=670 droop_cnt=0\n[00:00:03.860] PMU: INFO: Rail telemetry | rail=VCORE mv=800 i_ma=444 droop_cnt=0\n[00:00:03.904] PMU: INFO: Rail telemetry | rail=VCORE mv=835 i_ma=600 droop_cnt=0\n[00:00:03.932] PMU: INFO: Rail telemetry | rail=VCORE mv=800 i_ma=589 droop_cnt=0\n[00:00:03.936] PMU: INFO: Rail telemetry | rail=VCORE mv=798 i_ma=317 droop_cnt=0",
+          "note": ""
+        },
+        {
+          "step": 15,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:PMU",
+          "input": {},
+          "output": "Root causes the PMU specialist can recognise:\n- RC_LOAD_STEP_SPIKE: A fast di/dt load step exceeds the regulator slew capability  (tell-tales: load step detected, cause=load_step, di_dt)\n- RC_INSUFFICIENT_DECOUPLING: Insufficient decoupling causes undershoot/ringing after a transient  (tell-tales: rail ringing after transient, undershoot_mv)\n- RC_REGULATOR_LIMIT: Regulator reaches its current limit and folds back  (tell-tales: regulator current limit hit, cause=regulator_limit, i_limit)",
+          "note": ""
+        },
+        {
+          "step": 16,
+          "tool": "get_context",
+          "agent": "specialist:PMU",
+          "input": {
+            "start_ms": 3000,
+            "end_ms": 4100,
+            "include_info": false,
+            "subsystem": "PMU"
+          },
+          "output": "No matching lines between 3000 and 4100 ms.",
+          "note": ""
+        },
+        {
+          "step": 17,
+          "tool": "report_finding",
+          "agent": "specialist:PMU",
+          "input": {},
+          "output": "NONE (0.80): From 3700 to 3995 ms, PMU logged only VCORE rail telemetry at INFO level. Seven samples: 815/818/844/800/835/800/798 mV, current 317-670 mA, and droop_cnt=0 in every sample. That includes 3904, 3932 and 3936 ms, which bracket the 3927 ms timeout. Across 3000-4100 ms there are no PMU WARN or ERROR lines at all. That means no power-domain on/off events, clock-gating events, DVFS transitions, load-step detections, rail ringing or undershoot, or regulator current-limit events. The voltage spread is about 46 mV and the highest current is 670 mA at 3783 ms. Both look like normal load variation, and ",
+          "note": "PMU evidence does not support a power or clock cause. No domain was powered down or clock-gated and there was no voltage droop near the NoC or MMIO target before 3927 ms. The DMA->MMIO timeout most likely started outside PMU, inside the interconnect or the DMA/MMIO path. That fits the historian matc"
+        },
+        {
+          "step": 18,
+          "tool": "get_context",
+          "agent": "specialist:BOOT",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 4000,
+            "include_info": true,
+            "subsystem": "BOOT"
+          },
+          "output": "[00:00:00.000] BOOT: INFO: Power-on reset detected",
+          "note": ""
+        },
+        {
+          "step": 19,
+          "tool": "lookup_catalogue",
+          "agent": "specialist:BOOT",
+          "input": {},
+          "output": "No catalogue entries owned by the BOOT specialist.",
+          "note": ""
+        },
+        {
+          "step": 20,
+          "tool": "get_context",
+          "agent": "specialist:BOOT",
+          "input": {
+            "start_ms": 0,
+            "end_ms": 4000,
+            "include_info": false,
+            "subsystem": "BOOT"
+          },
+          "output": "No matching lines between 0 and 4000 ms.",
+          "note": ""
+        },
+        {
+          "step": 21,
+          "tool": "search_incidents",
+          "agent": "specialist:BOOT",
+          "input": {
+            "query": "BOOT init incomplete before NOC transaction timeout MMIO",
+            "top_k": 5
+          },
+          "output": "- run 000010 | NOC_TIMEOUT | root_cause=RC_DMA_BURST_OVERFLOW | similarity=0.4894\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Fabric <*> ; NOC: DMA burst overflow\n- run 000021 | NOC_TIMEOUT | root_cause=RC_NOC_DEADLOCK | similarity=0.4536\n    NOC_TIMEOUT | NOC: Transaction timeout ; NOC: NoC error register snapshot ; SYSTEM: Interconnect failure ; NOC: Dependency cycle suspected ; NOC: Fabric <*>\n- run 000001 | PCIE_TIMEOUT | root_cause=RC_PCIE_REFCLK_GATING | similarity=0.2711\n    PCIE_TIMEOUT | PCIE: Link training timeout ; PCIE: PCIe controller register snapshot ; SYSTEM: PCIe initialization failed ; PCIE: Refclk instability detected ; PCIE: LTSSM -> <*> ; THERMAL: Temperature high ; THERMAL: Fa\n- run 000020 | THERMAL_TRIP | root_cause=RC_WORKLOAD_BURST | similarity=0.2704\n    THERMAL_TRIP | THERMAL: Thermal trip threshold exceeded ; SYSTEM: Emergency shutdown ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call ; THERMAL: Temperature high ; PMU: Power \n- run 000020 | FW_EXCEPTION | root_cause=RC_FW_STACK_OVERFLOW | similarity=0.2633\n    FW_EXCEPTION | FW: Unhandled exception ; SYSTEM: Firmware crash ; FW: Null pointer guard triggered ; FW: Stack watermark exceeded ; FW: Retrying service call",
+          "note": ""
+        },
+        {
+          "step": 22,
+          "tool": "report_finding",
+          "agent": "specialist:BOOT",
+          "input": {},
+          "output": "NONE (0.60): From power-on up to 4000 ms the BOOT subsystem logged exactly one line: \"[00:00:00.000] BOOT: INFO: Power-on reset detected\". It logged no WARN, ERROR or FATAL lines. It also logged no init-stage messages: nothing about MMIO target init, nothing about NOC0 routing or QoS setup, and no reset-release or re-init events. Nothing appears in or near the 3927–3995 ms error window. The BOOT catalogue has no root-cause entries for this subsystem. Of the historical NOC_TIMEOUT incidents, run 000021 was a deadlock and run 000010 was a DMA burst overflow. In both, the evidence was NOC-side ('Dependency cy",
+          "note": "The BOOT logs show nothing that explains this timeout. No late or repeated init, reset or re-init event overlaps the DMA traffic at about 3927 ms. But BOOT also logs no completion milestones, so I can't positively confirm that the MMIO target and NOC0 routing/QoS were fully initialized. All I can sa"
+        },
+        {
+          "step": 23,
+          "tool": "submit_hypothesis",
+          "agent": "reviewer",
+          "input": {},
+          "output": "OTHER (0.30) | chain: Congestion burst at 3153-3531 ms in the CPU<->PCIE and PCIE<->DDR regions, with CPU0 QoS credit starvation at 3201 ms -> congestion clears (txn_q low/med, stall_pct 2-11 from 3560 ms) -> DMA issues txn 0xB6BA to MMIO -> MMIO target/port never responds (suspected; not confirmed) -> NOC timeout rc=-62 (ETIME) at 3927 ms -> NOC0 register snapshot at 3978 ms -> SYSTEM FATAL interconnect failure at 3995 ms",
           "note": ""
         }
       ]
     }
   ],
-  "generated_at": "2026-11-03T23:23:05+00:00"
+  "generated_at": "2026-11-04T00:13:10+00:00"
 }

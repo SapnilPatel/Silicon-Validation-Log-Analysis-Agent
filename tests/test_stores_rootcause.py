@@ -305,3 +305,23 @@ def test_holdout_cache_resumes_without_recomputing(pipeline, settings, dataset, 
     assert calls["n"] == 0
     assert second["hypotheses_reused_from_cache"] == first["test_failures"]
     assert second["root_cause"]["accuracy"] == first["root_cause"]["accuracy"]
+
+
+def test_root_cause_metrics_accept_any_injected_cause_of_same_type():
+    from svla_agent.eval.metrics import root_cause_metrics
+    from svla_agent.labels import accepted_root_causes
+
+    labels = {
+        "7": {
+            "injected_patterns": [
+                {"failure_type": "DDR_ECC", "root_cause_id": "RC_DDR_CDC_GLITCH"},
+                {"failure_type": "DDR_ECC", "root_cause_id": "RC_DDR_TIMING_VIOLATION"},
+            ]
+        }
+    }
+    acc = accepted_root_causes(labels)
+    assert acc == {"7:DDR_ECC": {"RC_DDR_CDC_GLITCH", "RC_DDR_TIMING_VIOLATION"}}
+    f = _failure("DDR_ECC", ["x"], "7")
+    pairs = [(f, "RC_DDR_TIMING_VIOLATION", "RC_DDR_CDC_GLITCH", 0.5)]
+    assert root_cause_metrics(pairs)["accuracy"] == 0.0
+    assert root_cause_metrics(pairs, acc)["accuracy"] == 1.0

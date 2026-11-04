@@ -33,7 +33,7 @@ from sklearn.metrics import (
 
 from ..embeddings.embedder import Embedder
 from ..hypothesize.agent import HypothesisAgent
-from ..labels import lookup_root_cause, root_cause_map
+from ..labels import accepted_root_causes, lookup_root_cause, root_cause_map
 from ..models import Failure
 from ..parse.parser import parse_run
 from ..pipeline import PipelineResult
@@ -211,20 +211,28 @@ def retrieval_recall_at_k(
 
 def root_cause_metrics(
     pairs: list[tuple[Failure, str | None, str | None, float]],
+    accepted: dict[str, set[str]] | None = None,
 ) -> dict:
     """Top-1 accuracy of predicted root-cause ids.
 
-    ``pairs`` holds ``(failure, truth_rc, predicted_rc, confidence)``.
+    ``pairs`` holds ``(failure, truth_rc, predicted_rc, confidence)``. When a run
+    injected two patterns of the same type, ``accepted`` lists every root cause
+    that counts as correct for that failure.
     """
+    accepted = accepted or {}
+
+    def hit(f: Failure, t: str | None, p: str | None) -> bool:
+        return p is not None and (p == t or p in accepted.get(f.failure_id, set()))
+
     scored = [(f, t, p, c) for f, t, p, c in pairs if t]
     if not scored:
         return {"note": "no labelled root causes"}
-    correct = [(f, t, p, c) for f, t, p, c in scored if p == t]
-    wrong = [(f, t, p, c) for f, t, p, c in scored if p != t]
+    correct = [(f, t, p, c) for f, t, p, c in scored if hit(f, t, p)]
+    wrong = [(f, t, p, c) for f, t, p, c in scored if not hit(f, t, p)]
     per_type: dict[str, dict[str, int]] = defaultdict(lambda: {"correct": 0, "total": 0})
     for f, t, p, _ in scored:
         per_type[f.failure_type]["total"] += 1
-        per_type[f.failure_type]["correct"] += int(p == t)
+        per_type[f.failure_type]["correct"] += int(hit(f, t, p))
     return {
         "accuracy": round(len(correct) / len(scored), 4),
         "n": len(scored),
@@ -336,7 +344,7 @@ def holdout_evaluation(
         "train_failures": len(train_failures),
         "test_failures": len(test_failures),
         "retrieval": retrieval,
-        "root_cause": root_cause_metrics(pairs),
+        "root_cause": root_cause_metrics(pairs, accepted_root_causes(labels)),
         "hypothesis_sources": dict(sources),
         "hypotheses_reused_from_cache": reused,
     }

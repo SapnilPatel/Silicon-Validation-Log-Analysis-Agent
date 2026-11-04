@@ -54,3 +54,18 @@ def lookup_root_cause(rc_map: dict[str, str | None], failure_id: str) -> str | N
     if rc:
         return rc
     return rc_map.get(failure_id.split(":", 1)[0])
+
+
+def accepted_root_causes(labels: dict[str, dict]) -> dict[str, set[str]]:
+    """``"{run_id}:{failure_type}" -> every injected root cause of that type``.
+
+    A run can carry two injected patterns of the same failure type with different
+    root causes; the pipeline reports one failure per type, so any of them counts.
+    """
+    out: dict[str, set[str]] = {}
+    for run_id, data in labels.items():
+        for pat in data.get("injected_patterns") or []:
+            ftype, rc = pat.get("failure_type"), pat.get("root_cause_id")
+            if ftype and rc:
+                out.setdefault(f"{run_id}:{ftype}", set()).add(rc)
+    return out
