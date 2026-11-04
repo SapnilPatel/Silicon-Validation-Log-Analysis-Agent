@@ -34,7 +34,7 @@ API and an interactive dashboard.
 ## ✨ Highlights
 
 - **Root cause, not just failure type** — a catalogue of 20 named root causes across 6 failure types; the agent scores them against the evidence and cites the tell-tale lines.
-- **An agent that investigates** — in agentic mode Claude pulls log lines around the failure from any subsystem, reads register dumps and stack traces, searches past incidents and looks up the catalogue in a bounded tool loop, then answers; every step is kept as a trace. [Details ↓](#-agentic-mode)
+- **A team of agents, when you want one** — multi-agent mode runs a LangGraph team per failure: a triage agent dispatches subsystem specialists in parallel, each confined to its own subsystem's logs and catalogue; a reviewer cross-checks their findings into a causal chain. Single-agent tool-loop and one-call modes are also there. Every agent step is kept as a trace. [Details ↓](#-agent-modes)
 - **Measured** — on a 400-run hold-out corpus: detection / typing F1 **1.00**, retrieval recall@5 **1.00**, root-cause top-1 **0.96** (rules) / **0.94** (Claude). [Details ↓](#-evaluation)
 - **Calibrated confidence** — when Claude is wrong its confidence drops to **0.47** (rules: 0.77), so the number is usable for triage.
 - **Fast & streaming** — 1.45 M log events (97 MB, 700 files) parsed, template-mined and classified in **23 s** on a laptop, ~64 k events/s, flat memory.
@@ -49,7 +49,7 @@ API and an interactive dashboard.
 - [Quickstart](#-quickstart)
 - [CLI & REST API](#-cli--rest-api)
 - [Enabling Claude](#-enabling-claude)
-- [Agentic mode](#-agentic-mode)
+- [Agent modes](#-agent-modes)
 - [Evaluation](#-evaluation)
 - [Example report](#-example-report)
 - [Dataset](#-dataset)
@@ -82,7 +82,7 @@ flowchart LR
 | **Embed** | `embeddings/embedder.py` | sentence-transformers embeddings (deterministic hashing fallback offline) |
 | **Cluster** | `cluster/clusterer.py` | HDBSCAN within each failure type → explainable failure families |
 | **RAG** | `rag/` | Pluggable vector store (`chroma` persistent, `memory` numpy) over historical failures |
-| **Hypothesize** | `hypothesize/` | Root-cause catalogue + evidence scoring; Claude picks among the same candidates, or investigates with tools in agentic mode |
+| **Hypothesize** | `hypothesize/` | Root-cause catalogue + evidence scoring; Claude in one call, as a tool-using agent, or as a LangGraph team of specialists |
 | **Report** | `report/reporter.py` | Jinja2 Markdown + JSON debug reports |
 | **Serve** | `api.py`, `app/streamlit_app.py` | FastAPI REST service and Streamlit dashboard |
 | **Evaluate** | `eval/metrics.py` | Detection, typing, clustering, hold-out retrieval and root-cause accuracy |
@@ -169,11 +169,50 @@ retrieved incidents, and return the same `Hypothesis` shape (including a
 
 Full list in [.env.example](.env.example).
 
-## 🕵️ Agentic mode
+## 🕵️ Agent modes
 
-The default LLM path is one structured call: Claude gets the evidence, the candidate
-root causes and the retrieved incidents, and answers. In **agentic mode** it gets tools
-instead and decides what to look at:
+Three ways to let Claude name the root cause, selected with `SVLA_LLM_MODE` or a CLI flag:
+
+| Mode | What happens | Calls / failure |
+|---|---|:---:|
+| `direct` (default) | One strict tool call with the evidence, candidates and retrieved incidents | 1 |
+| `agentic` (`--agentic`) | One agent with tools investigates in a bounded loop, then answers | 4–6 |
+| `multiagent` (`--multi-agent`) | A LangGraph team: triage → parallel subsystem specialists → reviewer | 10–25 |
+
+### Multi-agent team (LangGraph)
+
+```mermaid
+flowchart LR
+    T[Triage agent<br/><sub>which specialists, which question</sub>] -->|Send| S1[PCIe specialist]
+    T -->|Send| S2[PMU specialist]
+    T -->|Send| S3[Thermal specialist]
+    S1 --> R[Reviewer<br/><sub>cross-check · causal chain · confidence</sub>]
+    S2 --> R
+    S3 --> R
+    R -.->|one follow-up question| S2
+    R --> H[(Hypothesis + trace)]
+    H2[(incident store)] -.-> S1 & S2 & S3
+```
+
+- **Triage** reads the failure and the subsystems that logged around it, picks up to four
+  specialists and gives each a specific question (power and thermal are frequent upstream causes).
+- **Specialists** run in parallel. Each has its own system prompt, its own slice of the
+  root-cause catalogue, and `get_context` scoped to *its* subsystem's lines, so the PMU
+  specialist reports a voltage droop the DDR specialist never sees. They report a
+  structured finding, not a verdict.
+- **Reviewer** cross-checks the findings against each other and the error lines, may send
+  exactly one specialist back with a pointed question, then submits the hypothesis with a
+  causal chain ("PMU droop → DDR corrected errors → UE") and a confidence that reflects
+  how well the findings agree.
+
+The graph is a plain LangGraph `StateGraph` with a `Send` fan-out (`hypothesize/multiagent.py`);
+the model calls go through the same Anthropic provider as the other modes. Every message
+is recorded on the hypothesis trace with the agent's name and rendered in the report, the
+dashboard ("Team investigation") and the project site's explorer.
+
+### Single agent with tools (`agentic`)
+
+In **agentic mode** one agent gets tools and decides what to look at:
 
 | Tool | What it returns |
 |---|---|

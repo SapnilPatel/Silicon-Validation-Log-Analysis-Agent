@@ -54,7 +54,7 @@
       <article class="card"><h3>Streaming and fast</h3><p>97&nbsp;MB / 1.45&nbsp;M events across 700 files parsed, template-mined and classified in <strong>23&nbsp;s</strong> on a laptop, about 64&nbsp;k events/s, with flat memory.</p></article>
       <article class="card"><h3>Privacy first</h3><p>E-mails, IPs, MACs, serials and credentials are redacted at parse time — before anything is indexed, prompted or written into a report.</p></article>
       <article class="card"><h3>Honest evaluation</h3><p>Retrieval and root-cause metrics use a hold-out split: the index is built from 70% of runs and the rest are scored as unseen incidents. A failure can never retrieve itself.</p></article>
-      <article class="card"><h3>An agent that investigates</h3><p>In agentic mode Claude pulls the lines before the first error across every subsystem, reads register dumps and stack traces, searches past incidents and looks up the catalogue — then answers. Every step is recorded and shown in the explorer.</p></article>
+      <article class="card"><h3>A team of agents</h3><p>In multi-agent mode a LangGraph team works each failure: a triage agent dispatches subsystem specialists in parallel, each confined to its own logs and catalogue; a reviewer cross-checks their findings into a causal chain. Single-agent and one-call modes exist too. Every step is recorded and shown in the explorer.</p></article>
       <article class="card"><h3>Three front doors</h3><p>A <code>svla</code> CLI, a FastAPI REST service and a Streamlit dashboard share one pipeline. Pluggable vector store and LLM provider. Docker image built in CI.</p></article>
     </div>
   </section>

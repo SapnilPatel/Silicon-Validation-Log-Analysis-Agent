@@ -368,17 +368,25 @@ class InvestigationTeam:
             + "\n\nInvestigate with your tools, then call report_finding."
         )
         finding_tool = _finding_tool(self._rc_ids_for(subsys))
-        try:
-            result, raw_trace = self.provider.run_agent(
-                system=_SPECIALIST_SYSTEM.format(subsys=subsys),
-                prompt=prompt,
-                tools=tools.definitions(),
-                handlers=tools.handlers(),
-                final_tool=finding_tool,
-                max_turns=max(2, self.settings.agent_max_turns // 2),
-            )
-        except Exception as exc:  # one failed specialist must not sink the team
-            logger.warning("%s specialist failed: %s", subsys, exc)
+        result: dict[str, Any] | None = None
+        raw_trace: list[dict[str, Any]] = []
+        last_exc: Exception | None = None
+        for attempt in range(2):  # one retry: a transient 4xx/5xx must not blank a finding
+            try:
+                result, raw_trace = self.provider.run_agent(
+                    system=_SPECIALIST_SYSTEM.format(subsys=subsys),
+                    prompt=prompt,
+                    tools=tools.definitions(),
+                    handlers=tools.handlers(),
+                    final_tool=finding_tool,
+                    max_turns=max(2, self.settings.agent_max_turns // 2),
+                )
+                break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("%s specialist attempt %d failed: %s", subsys, attempt + 1, exc)
+        if result is None:  # one failed specialist must not sink the team
+            exc = last_exc
             result, raw_trace = (
                 {
                     "observation": f"specialist failed: {exc}",

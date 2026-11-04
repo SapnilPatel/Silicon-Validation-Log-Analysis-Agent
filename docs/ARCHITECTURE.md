@@ -83,6 +83,21 @@ RunFiles ─▶ ParsedRun ─▶ [Failure] ─▶ dedup + clustered [Failure] �
 - Every call is recorded as a `ToolCall` on `Hypothesis.trace` and rendered in
   the Markdown report, the dashboard and the API response.
 
+#### Multi-agent mode (`SVLA_LLM_MODE=multiagent`, `--multi-agent`)
+- `hypothesize/multiagent.py` builds a LangGraph `StateGraph` per failure:
+  `START → triage → (Send ×N) specialist → reviewer → END`, with one optional
+  `reviewer → specialist` follow-up edge.
+- **Triage** (one structured call) chooses up to four specialists among the
+  subsystems that logged non-telemetry lines around the failure and writes each
+  a question. **Specialists** run in parallel via `Send`; each reuses the
+  tool loop from agentic mode with `SpecialistTools` (lines and catalogue
+  restricted to its subsystem) and returns a structured finding. The
+  **reviewer** sees all findings and either requests one follow-up or submits
+  the hypothesis with a causal chain. Findings and traces merge through
+  `operator.add` reducers on the graph state.
+- A failed specialist is retried once and then reported as a `NONE` finding so
+  the team still concludes; a failed graph falls back to the rule-based agent.
+
 ### 7. Report — `report/reporter.py`
 - Renders each `RunReport` to Markdown (Jinja2 template
   `report/templates/run_report.md.j2`) and JSON.
